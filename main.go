@@ -18,6 +18,14 @@ import (
 const version = "0.1.0"
 
 func main() {
+	preparePlatformEnvironment()
+	if len(os.Args) > 1 && os.Args[1] == "claude-statusline" {
+		if err := captureClaudeStatusline(); err != nil {
+			fmt.Fprintln(os.Stderr, "Claude usage capture:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	cmd := ""
 	if len(os.Args) > 1 && !strings.HasPrefix(os.Args[1], "-") {
 		cmd = os.Args[1]
@@ -72,6 +80,9 @@ func runPanel(cfg *Config, noBrowser bool) {
 	store.ScanOnce()
 
 	srv := NewServer(store)
+	if !noBrowser {
+		srv.windows.done = make(chan struct{})
+	}
 	url, closeFn, err := srv.Serve(cfg.Port)
 	if err != nil {
 		logf("無法啟動面板：%v", err)
@@ -86,10 +97,12 @@ func runPanel(cfg *Config, noBrowser bool) {
 	logf("按 Ctrl+C 結束。")
 	if !noBrowser {
 		openBrowser(url)
+		go lockPanelWindows()
 	}
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(stop)
 
 	tick := time.NewTicker(time.Duration(cfg.RefreshSeconds) * time.Second)
 	defer tick.Stop()
@@ -99,6 +112,9 @@ func runPanel(cfg *Config, noBrowser bool) {
 			store.ScanOnce()
 		case <-stop:
 			logf("已結束。")
+			return
+		case <-srv.windows.done:
+			logf("所有面板視窗已關閉，結束背景程式。")
 			return
 		}
 	}
@@ -181,6 +197,9 @@ func textBar(pct float64, hasLimit bool) string {
 }
 
 func formatAmount(v float64, metric string) string {
+	if metric == "usd" {
+		return fmt.Sprintf("US$%.2f", v)
+	}
 	if metric == "requests" {
 		return fmt.Sprintf("%.0f 次", v)
 	}
@@ -200,16 +219,18 @@ func formatAmount(v float64, metric string) string {
 // ---------------------------------------------------------------------------
 
 type Diagnosis struct {
-	Provider  string            `json:"provider"`
-	Roots     []string          `json:"roots"`
-	RootsHit  []string          `json:"roots_hit"`
-	Files     int               `json:"files"`
-	Lines     int               `json:"lines"`
-	Events    int               `json:"events"`
-	Errors    []string          `json:"errors,omitempty"`
-	QuotaKeys map[string]any    `json:"quota_keys,omitempty"`
-	TokenKeys []string          `json:"token_keys,omitempty"`
-	Sample    *ProviderSnapshot `json:"sample,omitempty"`
+	CLIPath     string            `json:"cli_path,omitempty"`
+	DesktopDirs []string          `json:"desktop_dirs,omitempty"`
+	Provider    string            `json:"provider"`
+	Roots       []string          `json:"roots"`
+	RootsHit    []string          `json:"roots_hit"`
+	Files       int               `json:"files"`
+	Lines       int               `json:"lines"`
+	Events      int               `json:"events"`
+	Errors      []string          `json:"errors,omitempty"`
+	QuotaKeys   map[string]any    `json:"quota_keys,omitempty"`
+	TokenKeys   []string          `json:"token_keys,omitempty"`
+	Sample      *ProviderSnapshot `json:"sample,omitempty"`
 }
 
 func (s *Store) Diagnose() []Diagnosis {
@@ -227,6 +248,10 @@ func (s *Store) Diagnose() []Diagnosis {
 	defer s.mu.RUnlock()
 	for _, p := range cfg.Providers {
 		d := Diagnosis{Provider: p.ID}
+		if p.ID == providerClaude {
+			d.CLIPath = findClaudeCLI()
+			d.DesktopDirs = claudeDesktopDirs()
+		}
 		for _, r := range p.Roots {
 			d.Roots = append(d.Roots, expandVars(r))
 		}
@@ -277,6 +302,16 @@ func runDoctor(cfg *Config) {
 	fmt.Println()
 
 	for _, d := range store.Diagnose() {
+		if d.Provider == providerClaude {
+			if d.CLIPath == "" {
+				fmt.Println("Claude CLI：未找到；仍可讀取 Desktop 額度快照")
+			} else {
+				fmt.Println("Claude CLI（含 Desktop 內附版本）：", d.CLIPath)
+			}
+			if d.Sample != nil && d.Sample.QuotaAt != nil {
+				fmt.Printf("Claude 額度來源：%s，更新於 %s\n", d.Sample.QuotaSource, time.Unix(*d.Sample.QuotaAt, 0).Local().Format("2006-01-02 15:04:05"))
+			}
+		}
 		fmt.Println("──", d.Provider)
 		for _, r := range d.Roots {
 			mark := "  找不到"
@@ -320,13 +355,34 @@ func runDoctor(cfg *Config) {
 // openBrowser 在 Windows 上優先用 Edge 的 app 模式開一個沒有網址列的視窗，
 // 這樣看起來就是個獨立小工具，而不是一個瀏覽器分頁。
 func openBrowser(url string) {
+	if runtime.GOOS == "darwin" && openMacPanel(url) {
+		return
+	}
 	if runtime.GOOS == "windows" {
 		for _, exe := range appModeBrowsers() {
 			if _, err := os.Stat(exe); err != nil {
 				continue
 			}
-			cmd := exec.Command(exe, "--app="+url, "--window-size=720,760")
+			count := 0
+			for _, installed := range installedProviders() {
+				if installed {
+					count++
+				}
+			}
+			height := 146 + 80*count
+			if height < 230 {
+				height = 230
+			}
+			// A dedicated profile isolates app geometry, cookies and browser
+			// processes from the user's ordinary Edge/Chrome session.
+			profile := filepath.Join(ConfigDir(), "panel-browser")
+			if err := os.MkdirAll(profile, 0o700); err != nil {
+				logf("無法建立面板專用視窗設定：%v", err)
+				return
+			}
+			cmd := exec.Command(exe, panelBrowserArgs(url, profile, height)...)
 			if err := cmd.Start(); err == nil {
+				go func() { _ = cmd.Wait() }()
 				return
 			}
 		}
@@ -344,6 +400,17 @@ func openBrowser(url string) {
 	}
 	if err := cmd.Start(); err != nil {
 		logf("（無法自動開啟瀏覽器，請手動貼上網址）")
+	}
+}
+
+func panelBrowserArgs(url, profile string, height int) []string {
+	return []string{
+		"--user-data-dir=" + profile,
+		"--no-first-run",
+		"--no-default-browser-check",
+		"--disable-background-mode",
+		"--app=" + url,
+		fmt.Sprintf("--window-size=360,%d", height),
 	}
 }
 

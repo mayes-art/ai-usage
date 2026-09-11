@@ -12,6 +12,8 @@ import (
 // Usage 是正規化後的 token 計數。各家 CLI 的欄位名稱不同，
 // 這裡收斂成同一組欄位。
 type Usage struct {
+	Tool       int64 `json:"tool"`
+	UseTotal   bool  `json:"-"`
 	Input      int64 `json:"input"`
 	Output     int64 `json:"output"`
 	CacheWrite int64 `json:"cache_write"`
@@ -23,6 +25,9 @@ type Usage struct {
 // Billable 回傳用於進度條的 token 總量。
 // 若來源只給 total，就用 total；否則自行加總分項。
 func (u Usage) Billable() int64 {
+	if u.UseTotal {
+		return u.Total
+	}
 	sum := u.Input + u.Output + u.CacheWrite + u.CacheRead + u.Reasoning
 	if sum == 0 {
 		return u.Total
@@ -36,6 +41,8 @@ func (u Usage) empty() bool {
 }
 
 func (u *Usage) add(o Usage) {
+	u.Tool += o.Tool
+	u.UseTotal = u.UseTotal || o.UseTotal
 	u.Input += o.Input
 	u.Output += o.Output
 	u.CacheWrite += o.CacheWrite
@@ -60,6 +67,8 @@ type Event struct {
 // 若某家 CLI 真的把剩餘額度寫進本機紀錄，就用它當進度條分母，
 // 不必靠使用者手動填上限。
 type Reported struct {
+	Metric      string             `json:"metric,omitempty"`
+	Source      string             `json:"source,omitempty"`
 	At          time.Time          `json:"at"`
 	PercentUsed *float64           `json:"percent_used,omitempty"`
 	Used        *float64           `json:"used,omitempty"`
@@ -163,7 +172,7 @@ var uidKeys = map[string]int{"requestid": 1, "messageid": 2, "uuid": 3, "eventid
 // 因此這裡收「percent」這個字本身，再於 buildReported 判斷語意。
 var quotaSignals = []string{"ratelimit", "usagelimit", "quota", "percent", "utilization",
 	"remaining", "resetsat", "resetat", "resettime", "resetsin", "limitresets",
-	"windowseconds", "windowminutes", "windowsize",
+	"windowseconds", "windowminutes", "windowdurationmins", "windowsize",
 	"allowance", "credit", "balance"}
 
 func looksQuota(key string) bool {
@@ -470,6 +479,13 @@ func parseNode(provider string, node any, fallbackTime time.Time, collectKeys bo
 	if len(ctx.quota) > 0 || len(ctx.quotaLabels) > 0 {
 		rep = buildReported(ctx, fallbackTime)
 	}
+	if provider == providerClaude {
+		at := ctx.at
+		if at.IsZero() {
+			at = fallbackTime
+		}
+		rep = parseClaudeQuota(node, at)
+	}
 
 	if len(hits) == 0 {
 		return nil, rep, ctx.keyPaths
@@ -551,7 +567,7 @@ func buildReported(ctx *extractCtx, at time.Time) *Reported {
 			if v >= 0 && v <= 100 {
 				g.PercentUsed, g.hasPercent = 100-v, true
 			}
-		case strings.Contains(leaf, "windowminutes"):
+		case strings.Contains(leaf, "windowminutes"), strings.Contains(leaf, "windowdurationmins"):
 			g.WindowMinutes = v
 		case strings.Contains(leaf, "windowseconds"), strings.Contains(leaf, "windowsize"):
 			g.WindowMinutes = v / 60
@@ -570,6 +586,25 @@ func buildReported(ctx *extractCtx, at time.Time) *Reported {
 		}
 		g.Label = windowLabel(g.WindowMinutes)
 		r.Windows = append(r.Windows, *g)
+	}
+	// App-server may expose the same quota through both the legacy rateLimits
+	// field and rateLimitsByLimitId. Keep one copy of each identical window.
+	if len(r.Windows) > 1 {
+		seen := map[string]bool{}
+		unique := r.Windows[:0]
+		for _, w := range r.Windows {
+			reset := int64(0)
+			if w.ResetAt != nil {
+				reset = w.ResetAt.Unix()
+			}
+			key := fmt.Sprintf("%.0f|%.6f|%d", w.WindowMinutes, w.PercentUsed, reset)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			unique = append(unique, w)
+		}
+		r.Windows = unique
 	}
 	// 短的視窗排前面：它先滿，也就是實際卡住你的那一個。
 	// 長度未知的排最後，順序再以百分比高低固定下來，避免同分時抖動。

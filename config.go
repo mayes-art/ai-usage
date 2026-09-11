@@ -10,10 +10,11 @@ import (
 )
 
 const (
-	providerClaude = "claude"
-	providerCodex  = "codex"
-	providerGemini = "gemini"
-	providerCursor = "cursor"
+	providerClaude      = "claude"
+	providerCodex       = "codex"
+	providerGemini      = "gemini"
+	providerCursor      = "cursor"
+	providerAntigravity = "antigravity"
 )
 
 // ManualUsage 供沒有本機紀錄可讀的來源（目前是 Cursor）手動填寫。
@@ -24,10 +25,11 @@ type ManualUsage struct {
 }
 
 type ProviderConfig struct {
-	ID      string   `json:"id"`
-	Name    string   `json:"name"`
-	Enabled bool     `json:"enabled"`
-	Roots   []string `json:"roots"`
+	ClaudeOrg string   `json:"claude_org,omitempty"`
+	ID        string   `json:"id"`
+	Name      string   `json:"name"`
+	Enabled   bool     `json:"enabled"`
+	Roots     []string `json:"roots"`
 
 	Metric        string  `json:"metric"`         // tokens | requests
 	WindowKind    string  `json:"window_kind"`    // rolling | day | week | month
@@ -70,11 +72,9 @@ func DefaultConfig() *Config {
 				WindowKind: "rolling", WindowSeconds: 5 * 3600,
 			},
 			{
-				ID: providerGemini, Name: "Gemini CLI", Enabled: true,
-				Roots:      []string{filepath.Join(home, ".gemini", "tmp"), filepath.Join(home, ".gemini", "logs")},
-				Metric:     "requests",
-				WindowKind: "day",
-				Note:       "免費層通常以每日請求數計算，因此預設指標為請求數。",
+				ID: providerAntigravity, Name: "Antigravity CLI / Desktop", Enabled: true,
+				Metric: "quota", WindowKind: "rolling", WindowSeconds: 5 * 3600,
+				Note: "讀取執行中 Antigravity 的模型群額度；請保持 CLI 或 Desktop 開啟並登入。",
 			},
 			{
 				ID: providerCursor, Name: "Cursor", Enabled: true,
@@ -166,6 +166,7 @@ func LoadConfig() (*Config, error) {
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return def, err
 	}
+	migrateAntigravity(&cfg)
 	if cfg.RefreshSeconds <= 0 {
 		cfg.RefreshSeconds = def.RefreshSeconds
 	}
@@ -199,6 +200,17 @@ func LoadConfig() (*Config, error) {
 		}
 	}
 	return &cfg, nil
+}
+
+// Remove the old Gemini row without transferring its API-key limits or roots.
+func migrateAntigravity(cfg *Config) {
+	providers := cfg.Providers[:0]
+	for _, p := range cfg.Providers {
+		if p.ID != providerGemini {
+			providers = append(providers, p)
+		}
+	}
+	cfg.Providers = providers
 }
 
 func SaveConfig(c *Config) error {

@@ -13,6 +13,20 @@ func parse(t *testing.T, provider, raw string) *Event {
 	return ev
 }
 
+func TestAppServerWindowDurationAndDuplicates(t *testing.T) {
+	raw := []byte(`{"rateLimits":{"primary":{"usedPercent":17,"windowDurationMins":300,"resetsAt":1770000000}},"rateLimitsByLimitId":{"codex":{"primary":{"usedPercent":17,"windowDurationMins":300,"resetsAt":1770000000},"secondary":{"usedPercent":6,"windowDurationMins":10080,"resetsAt":1770600000}}}}`)
+	_, rep, _ := ParseRecord(providerCodex, raw, time.Now(), false)
+	if rep == nil || rep.PercentUsed == nil || *rep.PercentUsed != 17 {
+		t.Fatalf("unexpected report: %#v", rep)
+	}
+	if len(rep.Windows) != 2 {
+		t.Fatalf("want 2 deduplicated windows, got %d: %#v", len(rep.Windows), rep.Windows)
+	}
+	if rep.Windows[0].Label != "5 小時" || rep.Windows[1].Label != "7 天" {
+		t.Fatalf("unexpected labels: %#v", rep.Windows)
+	}
+}
+
 // Claude Code 風格：assistant 訊息帶 message.usage，含快取分項。
 func TestClaudeShape(t *testing.T) {
 	raw := `{"type":"assistant","uuid":"a1","sessionId":"s1","timestamp":"2026-09-11T09:30:00.000Z",

@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AI 用量</title>
+<link rel="icon" type="image/png" sizes="64x64" href="/robot-icon.png?v=1">
 <style>
   :root {
     --bg: #101419;
@@ -264,6 +265,30 @@
     .amounts { font-size: 11px; }
   }
 </style>
+<style>
+  body { font-size: 13px; line-height: 1.35; }
+  .panel { max-width: 360px; padding: 8px; }
+  header { gap: 6px; padding-bottom: 7px; align-items: center; }
+  h1 { font-size: 13px; white-space: nowrap; }
+  .clock { font-size: 10px; }
+  .row { margin-top: 6px; padding: 8px 10px; background: var(--surface); border: 1px solid var(--rule); border-radius: 9px; }
+  .row:last-child { border-bottom: 1px solid var(--rule); }
+  .head { align-items: center; margin-bottom: 5px; }
+  .name { font-size: 12px; }
+  .window { font-size: 10px; overflow-wrap: anywhere; }
+  .pct { font-size: 23px; color: var(--agent); }
+  .dot { background: var(--agent); border-radius: 50%; margin-top: 0; }
+  .track { height: 5px; }
+  .fill, .fill.warn, .fill.crit { background: var(--agent); }
+  .detail-toggle { margin-top: 5px; font-size: 10px; border: 0; padding: 0; }
+  .details { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--rule); }
+  .details[hidden] { display: none; }
+  .amounts { white-space: normal; text-align: left; overflow-wrap: anywhere; }
+  .meta { display: grid; gap: 5px; font-size: 11px; }
+  .meta .bit { white-space: normal; overflow-wrap: anywhere; }
+  footer { margin-top: 8px; padding-top: 6px; font-size: 10px; gap: 3px 8px; }
+  .empty { color: var(--text-dim); padding: 30px 8px; text-align: center; }
+</style>
 </head>
 <body>
 <div class="panel">
@@ -286,9 +311,13 @@
 const rowsEl = document.getElementById('rows');
 const clockEl = document.getElementById('clock');
 let latest = null;
+const expanded = new Set();
+const agentColors = { claude: '#DA9576', codex: '#55BCAB', cursor: '#AC98E8', antigravity: '#69A9EF' };
+const agentNames = { claude: 'Claude', codex: 'Codex', cursor: 'Cursor', antigravity: 'Antigravity' };
 let editing = null;   // 正在編輯的來源 id，避免重繪打斷輸入
 
 function fmtNum(n, metric) {
+  if (metric === 'usd') return Number(n).toFixed(2);
   if (metric === 'requests') return Math.round(n).toLocaleString('zh-Hant');
   if (n >= 1e9) return (n / 1e9).toFixed(2) + 'B';
   if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M';
@@ -316,7 +345,7 @@ function fmtLeft(sec) {
   if (m > 0) return m + ' 分';
   return Math.floor(sec) + ' 秒';
 }
-function metricWord(metric) { return metric === 'requests' ? '次' : 'tokens'; }
+function metricWord(metric) { return metric === 'usd' ? 'USD' : metric === 'requests' ? '次' : 'tokens'; }
 
 function render(snap) {
   latest = snap;
@@ -326,14 +355,16 @@ function render(snap) {
 
   const now = snap.at;
   rowsEl.innerHTML = '';
-  for (const p of snap.providers) {
+  for (const p of (snap.providers || [])) {
     rowsEl.appendChild(buildRow(p, now, editing === p.id));
   }
+  if (!snap.providers || !snap.providers.length) rowsEl.innerHTML = '<div class="empty">未偵測到已安裝的 AI agent</div>';
 }
 
 function buildRow(p, now, keepEditor) {
   const row = document.createElement('div');
   row.className = 'row';
+  row.style.setProperty('--agent', agentColors[p.id] || '#69A9EF');
 
   // has_limit 由後端決定：可能是手動上限，也可能是紀錄裡的官方回報百分比。
   const hasLimit = !!p.has_limit;
@@ -359,7 +390,8 @@ function buildRow(p, now, keepEditor) {
       '<div class="pct"></div>' +
       '<div class="amounts"></div>' +
     '</div>';
-  head.querySelector('.name').textContent = p.name;
+  head.querySelector('.name').textContent = agentNames[p.id] || p.name;
+  head.querySelector('.name').title = p.name;
   head.querySelector('.window').textContent = p.window_label;
 
   const pctEl = head.querySelector('.pct');
@@ -373,7 +405,7 @@ function buildRow(p, now, keepEditor) {
     // 保留 % 記號，讓這個位置一眼看得出是「百分比還算不出來」，
     // 而不是一條莫名其妙的橫線。
     pctEl.innerHTML = '—<span class="sign">%</span>';
-    pctEl.title = '尚未設定上限，算不出百分比';
+    pctEl.title = p.id === 'antigravity' ? '尚未取得 Antigravity 額度' : '尚未設定上限，算不出百分比';
   }
 
   const used = fmtNum(p.used, p.metric);
@@ -381,13 +413,19 @@ function buildRow(p, now, keepEditor) {
   if (hasLimit && p.show_limit) {
     amtEl.innerHTML = escapeHtml(used) + '<span class="sep">/</span>' +
       escapeHtml(fmtNum(p.limit, p.metric)) + ' <span class="unit">' + unit + '</span>';
+  } else if (hasLimit && p.id === 'antigravity') {
+    amtEl.textContent = '模型群額度；主數字為使用比例最高的限制';
+  } else if (hasLimit && p.id === 'cursor') {
+    amtEl.textContent = '方案額度（未提供金額上限）';
+  } else if (hasLimit && p.id === 'claude' && !p.last_event_at) {
+    amtEl.textContent = '帳號額度；未提供 token 總量';
   } else if (hasLimit) {
     // 官方只回報百分比、沒給絕對上限。這裡的數字是我們自己數的 token，
     // 跟上面那個百分比不是同一個單位，所以要講清楚是本機統計。
     amtEl.innerHTML = '<span class="unit">本機累計</span> ' + escapeHtml(used) +
       ' <span class="unit">' + unit + '</span>';
   } else {
-    amtEl.innerHTML = escapeHtml(used) + ' <span class="unit">' + unit + '，尚未設定上限</span>';
+    amtEl.innerHTML = p.id === 'antigravity' ? '等待額度資料' : escapeHtml(used) + ' <span class="unit">' + unit + '，尚未設定上限</span>';
   }
   row.appendChild(head);
 
@@ -406,6 +444,29 @@ function buildRow(p, now, keepEditor) {
     track.appendChild(marker);
   }
   row.appendChild(track);
+
+  const toggle = document.createElement('button');
+  toggle.className = 'detail-toggle';
+  toggle.type = 'button';
+  const details = document.createElement('div');
+  details.className = 'details';
+  details.id = 'details-' + p.id;
+  details.hidden = !expanded.has(p.id);
+  toggle.setAttribute('aria-controls', details.id);
+  const updateToggle = () => {
+    toggle.textContent = details.hidden ? '詳細資訊 ＋' : '收合資訊 −';
+    toggle.setAttribute('aria-expanded', String(!details.hidden));
+  };
+  toggle.onclick = () => {
+    details.hidden = !details.hidden;
+    if (details.hidden) { expanded.delete(p.id); if (editing === p.id) editing = null; }
+    else expanded.add(p.id);
+    updateToggle();
+  };
+  updateToggle();
+  row.appendChild(toggle);
+  row.appendChild(details);
+  details.appendChild(amtEl);
 
   // 下方資訊列
   const meta = document.createElement('div');
@@ -435,12 +496,14 @@ function buildRow(p, now, keepEditor) {
       bit((w.label || '另一道') + '限額', v);
     }
   }
-  if (p.limit_source === 'reported') bit('分母', '紀錄中的官方回報值');
+  if (p.limit_source === 'reported') bit('來源', escapeHtml(p.quota_source || '官方回報值'));
+  if (p.quota_at) bit('額度更新', escapeHtml(new Date(p.quota_at * 1000).toLocaleString('zh-Hant', {hour12: false})));
+  if (p.quota_stale) bit('資料較舊', '請檢查來源登入及更新狀態；超過 24 小時不再用於計算');
   if (bits.length) {
     meta.innerHTML = bits.join('');
     if (level === 'crit') meta.className = 'meta over';
     else if (level) meta.className = 'meta alert';
-    row.appendChild(meta);
+    details.appendChild(meta);
   }
 
   // 模型分佈
@@ -450,31 +513,31 @@ function buildRow(p, now, keepEditor) {
     m.innerHTML = p.models.map(x =>
       '<span>' + escapeHtml(x.model) + ' ' + fmtNum(p.metric === 'requests' ? x.requests : x.tokens, p.metric) + '</span>'
     ).join('');
-    row.appendChild(m);
+    details.appendChild(m);
   }
 
   // 狀態說明與可操作的下一步
   if (p.status === 'unavailable') {
     const h = document.createElement('div');
     h.className = 'hint';
-    h.innerHTML = '找不到紀錄資料夾。確認這些路徑是否存在，或改設定檔後按重新掃描：' +
-      '<div class="path">' + p.roots.map(escapeHtml).join('<br>') + '</div>';
-    row.appendChild(h);
+    h.innerHTML = escapeHtml(p.detail || '找不到紀錄資料夾') +
+      '<div class="path">' + (p.roots || []).map(escapeHtml).join('<br>') + '</div>';
+    details.appendChild(h);
   } else if (p.status === 'no_data' || p.status === 'idle' || p.status === 'disabled') {
     const h = document.createElement('div');
     h.className = 'hint';
     h.textContent = p.detail + (p.files ? '（已讀 ' + p.files + ' 個檔案）' : '');
-    row.appendChild(h);
+    details.appendChild(h);
   }
   if (p.errors && p.errors.length) {
     const h = document.createElement('div');
     h.className = 'hint';
     h.textContent = '讀取問題：' + p.errors[0];
-    row.appendChild(h);
+    details.appendChild(h);
   }
 
   // 上限設定
-  row.appendChild(buildLimitForm(p, keepEditor, hasLimit));
+  details.appendChild(buildLimitForm(p, keepEditor, hasLimit));
   return row;
 }
 
@@ -484,6 +547,13 @@ function buildLimitForm(p, keepEditor, hasLimit) {
   wrap.onsubmit = e => e.preventDefault();
 
   const manualSource = p.id === 'cursor';
+
+  if (p.id === 'antigravity') {
+    const note = document.createElement('span');
+    note.textContent = '請保持 Antigravity CLI 或 Desktop 開啟並登入；各模型群的額度不相加。';
+    wrap.appendChild(note);
+    return wrap;
+  }
 
   if (!keepEditor) {
     const btn = document.createElement('button');

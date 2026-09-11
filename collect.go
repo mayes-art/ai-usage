@@ -12,20 +12,24 @@ import (
 // Store 把所有狀態放在記憶體裡。
 // 這個工具不需要資料庫：紀錄檔本身就是持久層，重啟時重掃一次即可重建。
 type Store struct {
-	mu sync.RWMutex
+	antigravityNext time.Time
+	mu              sync.RWMutex
+	cursorNext      time.Time
 	// scanMu 序列化掃描本身。面板的「重新掃描」與定時掃描可能同時發生，
 	// 沒有這道鎖時 Rescan 會在掃描中途把 files 清空，讓 scanProvider 寫進 nil。
 	scanMu sync.Mutex
 	cfg    *Config
 
-	events   map[string][]Event
-	seen     map[string]struct{}
-	cum      map[string]Usage // provider|session -> 上次看到的累計值
-	reported map[string]*Reported
-	files    map[string]*fileState
-	stats    map[string]*scanStats
-	lastScan map[string]time.Time
-	keyPaths map[string]map[string]int
+	events       map[string][]Event
+	seen         map[string]struct{}
+	cum          map[string]Usage // provider|session -> 上次看到的累計值
+	reported     map[string]*Reported
+	files        map[string]*fileState
+	stats        map[string]*scanStats
+	lastScan     map[string]time.Time
+	keyPaths     map[string]map[string]int
+	codexLiveAt  time.Time
+	codexLiveErr string
 
 	collectKeys bool
 	host        string
@@ -73,6 +77,8 @@ func (s *Store) Rescan() {
 	s.cum = map[string]Usage{}
 	s.files = map[string]*fileState{}
 	s.reported = map[string]*Reported{}
+	s.cursorNext = time.Time{}
+	s.antigravityNext = time.Time{}
 	s.keyPaths = map[string]map[string]int{}
 }
 
@@ -98,6 +104,17 @@ func (s *Store) ScanOnce() {
 }
 
 func (s *Store) scanProvider(p ProviderConfig, cutoff time.Time) {
+	if p.ID == providerAntigravity {
+		s.scanAntigravity(p)
+		return
+	}
+	if p.ID == providerCursor {
+		s.scanCursorQuota(p)
+		return
+	}
+	if p.ID == providerClaude {
+		p.Roots = claudeRoots(p.Roots)
+	}
 	files, hitRoots, errs := discover(p.Roots)
 	st := &scanStats{Files: len(files), Errors: errs, RootsHit: hitRoots}
 
@@ -176,6 +193,33 @@ func (s *Store) scanProvider(p ProviderConfig, cutoff time.Time) {
 		s.mu.Unlock()
 	}
 
+	// Prefer the live account quota from Codex itself. If this fails, keep the
+	// rate-limit values recovered from session JSONL and expose the cause in UI.
+	if p.ID == providerCodex {
+		s.mu.RLock()
+		last, cachedErr := s.codexLiveAt, s.codexLiveErr
+		s.mu.RUnlock()
+		if time.Since(last) >= 30*time.Second {
+			rep, err := readCodexRateLimits(8 * time.Second)
+			s.mu.Lock()
+			s.codexLiveAt = time.Now()
+			if err != nil {
+				s.codexLiveErr = err.Error()
+			} else {
+				s.codexLiveErr = ""
+				s.reported[p.ID] = rep
+			}
+			cachedErr = s.codexLiveErr
+			s.mu.Unlock()
+		}
+		if cachedErr != "" && len(st.Errors) < 5 {
+			st.Errors = append(st.Errors, "Live quota unavailable; using session fallback: "+cachedErr)
+		}
+	}
+
+	if p.ID == providerClaude {
+		s.scanClaudeQuota(p, st)
+	}
 	s.mu.Lock()
 	s.stats[p.ID] = st
 	s.lastScan[p.ID] = time.Now()
@@ -254,10 +298,13 @@ type LimitWindow struct {
 }
 
 type ProviderSnapshot struct {
-	ID     string `json:"id"`
-	Name   string `json:"name"`
-	Status string `json:"status"` // ok | idle | no_data | unavailable | manual | disabled
-	Detail string `json:"detail"`
+	QuotaSource string `json:"quota_source,omitempty"`
+	QuotaAt     *int64 `json:"quota_at,omitempty"`
+	QuotaStale  bool   `json:"quota_stale,omitempty"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Status      string `json:"status"` // ok | idle | no_data | unavailable | manual | disabled
+	Detail      string `json:"detail"`
 
 	Metric      string `json:"metric"`
 	WindowLabel string `json:"window_label"`
@@ -302,6 +349,7 @@ type Snapshot struct {
 }
 
 func (s *Store) Snapshot() Snapshot {
+	installed := installedProviders()
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -313,6 +361,9 @@ func (s *Store) Snapshot() Snapshot {
 		WarnRatio: s.cfg.WarnRatio,
 	}
 	for _, p := range s.cfg.Providers {
+		if !installed[p.ID] {
+			continue
+		}
 		snap.Providers = append(snap.Providers, s.providerSnapshot(p, now))
 	}
 	return snap
@@ -407,12 +458,36 @@ func (s *Store) providerSnapshot(p ProviderConfig, now time.Time) ProviderSnapsh
 
 	// 若紀錄裡真的找到官方回報的額度，優先採用
 	reportedPct := false
+	if p.ID == providerCursor {
+		ps.Name = "Cursor IDE / CLI"
+		ps.Note = "透過 IDE 或 CLI 登入取得帳號共享額度，不將兩個來源或團隊支出相加。"
+	}
+	if p.ID == providerClaude {
+		ps.Name = "Claude CLI / Desktop"
+		ps.Note = "額度為帳號共享限制；本機 token 僅包含可讀的 Code 紀錄。Desktop 開啟後才會更新額度快照。"
+	}
 	if s.cfg.PreferReported {
+		if r := s.reported[p.ID]; r != nil && r.Source != "" {
+			ps.QuotaSource = r.Source
+			t := r.At.Unix()
+			ps.QuotaAt = &t
+			ps.QuotaStale = now.Sub(r.At) > 45*time.Minute
+		}
 		if r := s.reported[p.ID]; r != nil && r.usable() && now.Sub(r.At) < 24*time.Hour {
+			if r.Metric != "" {
+				ps.Metric = r.Metric
+			}
+			if p.ID == providerCursor {
+				ps.Used, ps.Limit = 0, 0
+				ps.RatePerMin = 0
+				ps.Today = 0
+				winEnd = time.Time{}
+			}
 			if r.PercentUsed != nil {
 				ps.Percent = *r.PercentUsed / 100
 				ps.LimitSource = "reported"
 				reportedPct = true
+				ps.Status = "ok"
 				if r.Used != nil {
 					ps.Used = *r.Used
 				}
@@ -500,12 +575,17 @@ func (s *Store) providerSnapshot(p ProviderConfig, now time.Time) ProviderSnapsh
 	if st := s.stats[p.ID]; st != nil {
 		ps.Files = st.Files
 		ps.Errors = st.Errors
+		if p.ID == providerClaude {
+			ps.Roots = append(ps.Roots, st.RootsHit...)
+		}
 	}
 
 	// 狀態判定：要能區分「沒在用」和「壞了」。
 	if ps.Status == "" {
 		st := s.stats[p.ID]
 		switch {
+		case reportedPct:
+			ps.Status = "ok"
 		case st == nil:
 			ps.Status = "no_data"
 			ps.Detail = "尚未掃描"
@@ -523,6 +603,24 @@ func (s *Store) providerSnapshot(p ProviderConfig, now time.Time) ProviderSnapsh
 			ps.Detail = "這個視窗內沒有用量"
 		default:
 			ps.Status = "ok"
+		}
+	}
+	if p.ID == providerClaude && (ps.Status == "unavailable" || ps.Status == "no_data") {
+		ps.Detail = "尚無可用的 Claude 額度快照。請開啟 Desktop 用量頁面；CLI 可透過 claude-statusline 匯入額度。"
+	}
+	if p.ID == providerCursor && (ps.Status == "unavailable" || ps.Status == "no_data") {
+		ps.Detail = "請登入 Cursor IDE 或 Cursor CLI 後重新掃描。"
+	}
+	if p.ID == providerAntigravity {
+		ps.Metric = "quota"
+		ps.Used = 0
+		ps.Limit = 0
+		ps.ShowLimit = false
+		if !reportedPct {
+			ps.HasLimit = false
+			ps.Percent = 0
+			ps.Status = "unavailable"
+			ps.Detail = "請開啟並登入 Antigravity CLI 或 Desktop，然後重新掃描。"
 		}
 	}
 	return ps

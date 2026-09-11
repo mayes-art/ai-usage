@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -17,9 +18,46 @@ import (
 var uiFS embed.FS
 
 type Server struct {
-	store *Store
-	token string
-	mux   *http.ServeMux
+	store   *Store
+	token   string
+	mux     *http.ServeMux
+	windows panelWindows
+}
+
+// An SSE connection belongs to one panel window. Refresh/reconnect gets a
+// grace period; minimizing does not disconnect. Never attach API polling here.
+type panelWindows struct {
+	mu     sync.Mutex
+	count  int
+	timer  *time.Timer
+	done   chan struct{}
+	closed bool
+}
+
+func (p *panelWindows) attach() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.count++
+	if p.timer != nil {
+		p.timer.Stop()
+	}
+}
+
+func (p *panelWindows) detach(grace time.Duration) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.count--
+	if p.count != 0 || p.done == nil || p.closed {
+		return
+	}
+	p.timer = time.AfterFunc(grace, func() {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		if p.count == 0 && !p.closed {
+			p.closed = true
+			close(p.done)
+		}
+	})
 }
 
 func NewServer(store *Store) *Server {
@@ -31,6 +69,9 @@ func NewServer(store *Store) *Server {
 }
 
 func (s *Server) routes() {
+	// Static, non-sensitive favicon: browser icon requests may omit cookies.
+	s.mux.HandleFunc("/robot-icon.png", serveRobotIcon)
+	s.mux.HandleFunc("/favicon.ico", serveRobotIcon)
 	s.mux.HandleFunc("/", s.guard(s.handleIndex))
 	s.mux.HandleFunc("/api/snapshot", s.guard(s.handleSnapshot))
 	s.mux.HandleFunc("/api/stream", s.guard(s.handleStream))
@@ -104,6 +145,8 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "不支援串流", 500)
 		return
 	}
+	s.windows.attach()
+	defer s.windows.detach(8 * time.Second)
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Connection", "keep-alive")
@@ -217,5 +260,5 @@ func (s *Server) Serve(port int) (string, func() error, error) {
 			log.Println("面板停止:", err)
 		}
 	}()
-	return url, ln.Close, nil
+	return url, srv.Close, nil
 }
