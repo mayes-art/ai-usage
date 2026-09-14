@@ -139,6 +139,6 @@ docker run --rm --pull=always --mount "type=bind,source=$PWD,target=/src" -w /sr
 - [架構說明](architecture.md)：分層與擴充契約。
 - [Claude](providers/claude.md)、[Cursor](providers/cursor.md)、[Antigravity](providers/antigravity.md)：來源細節；Codex 實作從 `internal/source/codex/` 閱讀。
 - [2026-09-14 檢視紀錄](review-2026-09-14.md)：此次發現及驗證範圍。
-- [Cursor 雙模型池 QA](qa-cursor-model-pools.md)：自動測試、畫面及建置通過；Claude CLI QA 因尚未登入、使用者暫時無法登入而待續，不能標為已通過。
+- [Cursor 雙模型池 QA](qa-cursor-model-pools.md)：自動測試、畫面及建置結果，以及登入後完成的 Claude CLI QA 與修正紀錄。
 
 後續需求可直接說「調整面板顏色」、「修正 Cursor 額度更新」或「新增來源」，由此文件定位程式。完成相關變更時更新受影響章節及核對日期，移除已不成立的限制；不要累積聊天逐字稿或把未確認的推測寫成事實。

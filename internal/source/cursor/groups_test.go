@@ -29,6 +29,9 @@ func TestIndependentModelPools(t *testing.T) {
 			if !r.Usable() || len(r.Groups) != 2 || (r.PercentUsed != nil) != tc.wantTotal {
 				t.Fatalf("unexpected report: %+v", r)
 			}
+			if len(r.Windows) != 1 || r.Windows[0].HasPercent != tc.wantTotal {
+				t.Fatalf("billing window percent presence: %+v", r.Windows)
+			}
 			for i, want := range []float64{tc.cursor, tc.other} {
 				g := r.Groups[i]
 				if want < 0 {

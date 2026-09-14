@@ -24,7 +24,7 @@ func TestCursorAccounting(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if r.Metric != "usd" || *r.Used != tc.used || *r.Limit != tc.limit || *r.PercentUsed != tc.percent || len(r.Windows) != tc.windows {
+			if r.Metric != "usd" || *r.Used != tc.used || *r.Limit != tc.limit || *r.PercentUsed != tc.percent || len(r.Windows) != tc.windows || !r.Windows[0].HasPercent {
 				t.Fatalf("unexpected accounting: %+v", r)
 			}
 			if tc.name == "protobuf omitted zero" && (r.ResetAt == nil || r.ResetAt.UnixMilli() != 1790410300000) {

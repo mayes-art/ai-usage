@@ -101,7 +101,12 @@ func parseCursorUsage(data []byte, now time.Time) (*model.Reported, error) {
 			r.ResetAt = &reset
 		}
 	}
-	r.Windows = []model.ReportedWindow{{Label: "帳單週期", PercentUsed: percent, ResetAt: r.ResetAt}}
+	window := model.ReportedWindow{Label: "帳單週期", ResetAt: r.ResetAt}
+	if p.TotalPercentUsed != nil {
+		window.PercentUsed = percent
+		window.HasPercent = true
+	}
+	r.Windows = []model.ReportedWindow{window}
 	return r, nil
 }
 

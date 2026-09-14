@@ -35,13 +35,15 @@ Linux 目前不做安裝過濾。舊設定中的 `gemini` 會在載入時移除�
 
 1. 功能與修正 PR 以 Conventional Commits 格式合併到 `main`。
 2. GitHub Actions 會建立或更新 `chore(main): release ...` PR，集中版本號與變更紀錄。
-3. 人工審查並合併 Release PR 後，Actions 才建立 tag 與草稿 GitHub Release。
-4. 測試、靜態檢查及六平台建置全部成功後，Actions 上傳產物並公開 Release。
+3. 人工審查並合併 Release PR 後，Actions 先執行測試、靜態檢查及六平台建置。
+4. 全部成功後才建立 tag、上傳產物並公開 GitHub Release；暫時性失敗可直接重跑。
 
 `feat:`、`fix:` 與 breaking change 會依 SemVer 決定下一版；目前在 `0.x` 階段，
 `feat:` 採 patch bump。內建版本號由 Release PR 同步更新，不需手動改 tag。
 GitHub repository 必須允許 Actions 建立 PR；若要強制不同人核准，請在 `main` 的
 branch ruleset 啟用「Require a pull request」與至少一位 approving review。
+若測試或建置因程式瑕疵持續失敗，需先以新 PR 修正，再由下一張 Release PR 發布；
+首次 Release PR 合併也應確認 tag、資產與 release notes 的端對端結果。
 
 ## 使用 Docker 建置
 

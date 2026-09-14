@@ -16,13 +16,27 @@ Cursor 主列下常駐 Cursor model 與 Other model 子項目，各自顯示百�
 
 ## Claude CLI QA
 
-已依使用者要求呼叫本機 Claude CLI 2.1.270。使用者已明確同意將本次相關程式、差異及合成資料傳送至 Anthropic 供 QA；不包含憑證或個人對話。
+使用者完成登入後，已將 PR #2 的程式差異傳送至 Anthropic，由 Claude Sonnet 5 以停用工具、
+禁止寫入及不發表 GitHub 評論的模式執行唯讀 QA。內建 `ultrareview` 當時不可用，
+因此改用非互動程式檢視。
 
-呼叫回報 `Not logged in · Please run /login`，因此 **Claude QA 尚未執行，不能視為通過**。已嘗試官方登入流程，使用者回覆暫時無法登入，故暫停此步驟；登入後可接續。QA 提示及合成畫面預覽位於本機忽略目錄 `dist/qa/`。
+Claude 找到並已修正兩項問題：
+
+- Release Please 原先會先建立 tag／草稿 Release，後續建置若失敗，重跑時不會再次進入建置。
+  現改為 Release Please 只維護人工核准 PR；該 PR 合併後，另一個 job 先測試與建置，
+  成功才建立 Release，且同一 workflow run 可重跑修復既有 Release 資產。
+- Cursor 僅有分項、缺少方案總百分比時，帳單週期內部欄位會留下假的 `0%`。
+  現以 `ReportedWindow.HasPercent` 明確區分未知與零，並增加回歸測試。
+
+修正後 `actionlint`、`go test -race ./...` 與 `go vet ./...` 均再次通過，
+並完成 Windows、Linux、macOS 的 amd64／arm64 六平台交叉建置。
+Claude 針對修補差異再次檢視後回報 `PASS`，未發現可執行的新缺陷；首次實際
+Release PR 合併仍是 GitHub Actions 事件排序、tag 與資產上傳的端對端驗證點。
 
 ## 範圍限制
 
-未查詢真實 Cursor 帳號或使用個人紀錄；欄位對應核對本機 Cursor 3.17.21。跨平台建置不等於 macOS 實機驗證。
+未把憑證或個人對話傳送給 Claude。欄位對應核對本機 Cursor 3.17.21。
+跨平台建置不等於 macOS 實機驗證；GitHub Actions 發布流程仍需在首張 Release PR 合併時完成端對端驗證。
 
 ## 2026-09-14 追加：實機核對
 
