@@ -14,6 +14,14 @@ type LimitWindow struct {
 	ResetAt *int64  `json:"reset_at,omitempty"`
 }
 
+type UsageGroup struct {
+	ID      string   `json:"id"`
+	Label   string   `json:"label"`
+	Percent *float64 `json:"percent,omitempty"` // ratio; nil is unknown, not zero
+	Used    *float64 `json:"used,omitempty"`
+	Limit   *float64 `json:"limit,omitempty"`
+}
+
 type ProviderSnapshot struct {
 	QuotaSource string `json:"quota_source,omitempty"`
 	QuotaAt     *int64 `json:"quota_at,omitempty"`
@@ -46,6 +54,7 @@ type ProviderSnapshot struct {
 	ExhaustIn  *int64  `json:"exhaust_in_sec,omitempty"`
 
 	OtherLimits []LimitWindow `json:"other_limits,omitempty"`
+	UsageGroups []UsageGroup  `json:"usage_groups,omitempty"`
 
 	Models      []ModelUse `json:"models"`
 	LastEventAt *int64     `json:"last_event_at,omitempty"`

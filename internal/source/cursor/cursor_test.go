@@ -15,8 +15,9 @@ func TestCursorAccounting(t *testing.T) {
 		used, limit, percent float64
 		windows              int
 	}{
-		{"protobuf omitted zero", `{"billingCycleEnd":"1790410300000","planUsage":{"limit":2000,"autoPercentUsed":0,"apiPercentUsed":0,"totalPercentUsed":0},"spendLimitUsage":{"pooledUsed":8475,"limitType":"team"}}`, 0, 20, 0, 3},
-		{"bonus and pooled excluded", `{"planUsage":{"totalSpend":2600,"includedSpend":1000,"bonusSpend":1600,"limit":2000},"spendLimitUsage":{"individualUsed":500,"pooledUsed":8475}}`, 10, 20, 50, 1},
+		{"protobuf omitted zero", `{"billingCycleEnd":"1790410300000","planUsage":{"limit":2000,"autoPercentUsed":0,"apiPercentUsed":0,"totalPercentUsed":0},"spendLimitUsage":{"pooledUsed":8475,"limitType":"team"}}`, 0, 20, 0, 1},
+		{"allowance fields are not usage", `{"planUsage":{"totalSpend":2600,"includedSpend":1000,"bonusSpend":1600,"limit":2000,"totalPercentUsed":25},"spendLimitUsage":{"individualUsed":500,"pooledUsed":8475}}`, 5, 20, 25, 1},
+		{"overage is not clamped", `{"planUsage":{"limit":2000,"totalPercentUsed":125}}`, 25, 20, 125, 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r, err := parseCursorUsage([]byte(tc.body), time.Now())
@@ -26,7 +27,7 @@ func TestCursorAccounting(t *testing.T) {
 			if r.Metric != "usd" || *r.Used != tc.used || *r.Limit != tc.limit || *r.PercentUsed != tc.percent || len(r.Windows) != tc.windows {
 				t.Fatalf("unexpected accounting: %+v", r)
 			}
-			if tc.windows == 3 && (r.ResetAt == nil || r.ResetAt.UnixMilli() != 1790410300000) {
+			if tc.name == "protobuf omitted zero" && (r.ResetAt == nil || r.ResetAt.UnixMilli() != 1790410300000) {
 				t.Fatal("billing reset milliseconds lost")
 			}
 		})
@@ -34,9 +35,20 @@ func TestCursorAccounting(t *testing.T) {
 	if _, err := parseCursorUsage([]byte(`{"spendLimitUsage":{"pooledUsed":8475}}`), time.Now()); err == nil {
 		t.Fatal("team spending must not become personal quota")
 	}
+	if _, err := parseCursorUsage([]byte(`{"planUsage":{"totalSpend":3624,"includedSpend":2000,"bonusSpend":1624,"limit":2000}}`), time.Now()); err == nil {
+		t.Fatal("allowance without a reported percent is not usage")
+	}
 	r, err := parseCursorUsage([]byte(`{"planUsage":{"totalPercentUsed":0}}`), time.Now())
 	if err != nil || r.PercentUsed == nil || *r.PercentUsed != 0 || r.Limit != nil {
 		t.Fatalf("zero percent without amount: %+v %v", r, err)
+	}
+	// 實機 Cursor 3.17.21：includedSpend 與 limit 同為 2000，實際用量只有 14.496%.
+	r, err = parseCursorUsage([]byte(`{"planUsage":{"totalSpend":3624,"includedSpend":2000,"bonusSpend":1624,"limit":2000,"totalPercentUsed":14.496}}`), time.Now())
+	if err != nil || r.PercentUsed == nil || *r.PercentUsed != 14.496 {
+		t.Fatalf("included allowance must not be read as a spent plan: %+v %v", r, err)
+	}
+	if r.Used == nil || *r.Used < 2.899 || *r.Used > 2.9 || r.Limit == nil || *r.Limit != 20 {
+		t.Fatalf("spend must be derived from the reported percent: %+v", r)
 	}
 	if _, err := parseCursorUsage([]byte(`{"planUsage":{}}`), time.Now()); err == nil {
 		t.Fatal("missing is not zero")

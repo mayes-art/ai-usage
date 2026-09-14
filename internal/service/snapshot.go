@@ -165,6 +165,24 @@ func (s *Store) providerSnapshot(p model.ProviderConfig, now time.Time) model.Pr
 			if r.ResetAt != nil {
 				winEnd = *r.ResetAt
 			}
+			for _, group := range r.Groups {
+				g := model.UsageGroup{ID: group.ID, Label: group.Label}
+				if group.PercentUsed != nil {
+					percent := *group.PercentUsed / 100
+					g.Percent = &percent
+					ps.Status = "ok"
+					ps.LimitSource = "reported"
+				}
+				if group.Used != nil {
+					used := *group.Used
+					g.Used = &used
+				}
+				if group.Limit != nil {
+					limit := *group.Limit
+					g.Limit = &limit
+				}
+				ps.UsageGroups = append(ps.UsageGroups, g)
+			}
 			if len(r.Windows) > 0 {
 				// 進度條畫最短的那個窗，其餘的原樣帶到細節列。
 				if l := r.Windows[0].Label; l != "" {
