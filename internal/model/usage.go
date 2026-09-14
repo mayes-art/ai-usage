@@ -68,8 +68,18 @@ type Reported struct {
 	Limit       *float64           `json:"limit,omitempty"`
 	ResetAt     *time.Time         `json:"reset_at,omitempty"`
 	Windows     []ReportedWindow   `json:"windows,omitempty"`
+	Groups      []ReportedGroup    `json:"groups,omitempty"`
 	Fields      map[string]float64 `json:"fields,omitempty"`
 	Labels      map[string]string  `json:"labels,omitempty"`
+}
+
+// ReportedGroup is an independent pool; nil values mean unknown.
+type ReportedGroup struct {
+	ID          string   `json:"id"`
+	Label       string   `json:"label"`
+	PercentUsed *float64 `json:"percent_used,omitempty"`
+	Used        *float64 `json:"used,omitempty"`
+	Limit       *float64 `json:"limit,omitempty"`
 }
 
 // ReportedWindow 是一個獨立的計量視窗。
@@ -86,6 +96,11 @@ type ReportedWindow struct {
 func (r Reported) Usable() bool {
 	if r.PercentUsed != nil {
 		return true
+	}
+	for _, group := range r.Groups {
+		if group.PercentUsed != nil {
+			return true
+		}
 	}
 	return r.Used != nil && r.Limit != nil && *r.Limit > 0
 }

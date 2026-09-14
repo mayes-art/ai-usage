@@ -130,7 +130,8 @@ Windows 開機自動啟動：`Win+R` → `shell:startup`，放入 `aiusage-panel
   顯示 `—%`；這不等於已使用 0%。
 - **多重限制**：Codex 通常顯示較短視窗，其他視窗放在詳細資訊；Claude 會列出來源提供的
   5 小時、7 天等限制。Antigravity 顯示使用比例最高的模型群限制，其餘分列。
-  Cursor 顯示帳單週期，並保留來源提供的 Auto / Composer、API 模型百分比。
+  Cursor 顯示帳單週期，並在主列下直接列出 Cursor model、Other model 各自的百分比與進度條；
+  方案總百分比移至詳細資訊，缺少分項資料顯示 `—%`。
 - **重置時間**：有官方重置時間時採用回報值。本機滾動視窗的「最舊紀錄滑出」
   只表示一筆紀錄即將離開統計範圍，不表示帳號額度全部重置。
 - **警戒與狀態**：低於警戒線使用來源色，達警戒線轉黃，達 100% 轉紅；
@@ -281,6 +282,10 @@ scripts/release.sh    測試與跨平台建置
 詳細的 SOLID 對應、來源擴充契約、依賴圖及已知限制見 [架構說明](docs/architecture.md)。
 新增來源透過 `Collector` registry 與 `ProviderPolicy` 接入，service 不依賴具體來源。
 設定採深拷貝，只有儲存成功後才更新執行中的設定。
+
+接續開發可先讀 [專案記憶](docs/project-memory.md)，快速找到需求對應的程式位置、
+計量規則與驗證方式；AI 協作入口為 [AGENTS.md](AGENTS.md)。
+本次程式檢視發現及測試範圍見 [2026-09-14 檢視紀錄](docs/review-2026-09-14.md)。
 
 只執行測試及靜態檢查（PowerShell）：
 

@@ -35,16 +35,7 @@ func openMacPanel(url string) bool {
 			if os.MkdirAll(profile, 0700) != nil {
 				return false
 			}
-			count := 0
-			for _, yes := range InstalledProviders() {
-				if yes {
-					count++
-				}
-			}
-			height := 146 + 80*count
-			if height < 230 {
-				height = 230
-			}
+			height := panelHeight(InstalledProviders())
 			cmd := exec.Command(exe, panelBrowserArgs(url, profile, height)...)
 			if cmd.Start() == nil {
 				go func() { _ = cmd.Wait() }()

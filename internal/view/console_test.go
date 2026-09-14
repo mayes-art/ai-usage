@@ -20,3 +20,16 @@ func TestReportWritesSnapshotToChosenOutput(t *testing.T) {
 		}
 	}
 }
+
+func TestReportShowsIndependentPoolsAndUnknown(t *testing.T) {
+	var output bytes.Buffer
+	zero := 0.0
+	Report(&output, model.Snapshot{Providers: []model.ProviderSnapshot{{Name: "Cursor", UsageGroups: []model.UsageGroup{
+		{Label: "Cursor model", Percent: &zero}, {Label: "Other model"},
+	}}}})
+	for _, want := range []string{"Cursor model: 0%", "Other model: —%"} {
+		if !strings.Contains(output.String(), want) {
+			t.Fatalf("missing %q: %s", want, output.String())
+		}
+	}
+}

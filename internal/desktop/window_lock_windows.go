@@ -58,16 +58,7 @@ func LockPanelWindows() {
 	var pids map[uint32]bool
 	last := time.Time{}
 	logged := map[uintptr]bool{}
-	count := 0
-	for _, v := range InstalledProviders() {
-		if v {
-			count++
-		}
-	}
-	height := 146 + 80*count
-	if height < 230 {
-		height = 230
-	}
+	height := panelHeight(InstalledProviders())
 	callback := syscall.NewCallback(func(hwnd, unused uintptr) uintptr {
 		var pid uint32
 		pidProc.Call(hwnd, uintptr(unsafe.Pointer(&pid)))

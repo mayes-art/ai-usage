@@ -58,11 +58,14 @@ func parseCursorUsage(data []byte, now time.Time) (*model.Reported, error) {
 	var result struct {
 		BillingCycleEnd json.Number `json:"billingCycleEnd"`
 		PlanUsage       *struct {
-			IncludedSpend    float64  `json:"includedSpend"`
 			Limit            float64  `json:"limit"`
 			TotalPercentUsed *float64 `json:"totalPercentUsed"`
 			AutoPercentUsed  *float64 `json:"autoPercentUsed"`
 			APIPercentUsed   *float64 `json:"apiPercentUsed"`
+			AutoSpend        *float64 `json:"autoSpend"`
+			AutoLimit        *float64 `json:"autoLimit"`
+			APISpend         *float64 `json:"apiSpend"`
+			APILimit         *float64 `json:"apiLimit"`
 		} `json:"planUsage"`
 	}
 	if err := json.Unmarshal(data, &result); err != nil {
@@ -73,38 +76,58 @@ func parseCursorUsage(data []byte, now time.Time) (*model.Reported, error) {
 		return nil, fmt.Errorf("Cursor 未回傳個人方案額度；團隊共享支出不等於個人用量")
 	}
 	r := &model.Reported{At: now, Metric: "usd"}
+	// Cursor 3.17: auto* is first-party; api* is third-party.
+	r.Groups = []model.ReportedGroup{
+		cursorUsageGroup("cursor-model", "Cursor model", p.AutoPercentUsed, p.AutoSpend, p.AutoLimit),
+		cursorUsageGroup("other-model", "Other model", p.APIPercentUsed, p.APISpend, p.APILimit),
+	}
+	// includedSpend / bonusSpend / totalSpend 都是可用額度而非已用金額，只有 *PercentUsed 是用量。
 	var percent float64
-	if p.Limit > 0 {
-		used, limit := p.IncludedSpend/100, p.Limit/100
-		if used < 0 || math.IsNaN(used) || math.IsInf(used, 0) {
-			return nil, fmt.Errorf("Cursor 用量數值無效")
-		}
-		r.Used, r.Limit = &used, &limit
-		percent = math.Min(100, used/limit*100)
-	} else if p.TotalPercentUsed != nil {
+	if p.TotalPercentUsed != nil {
 		percent = *p.TotalPercentUsed
-	} else {
-		return nil, fmt.Errorf("Cursor 未提供可計算的方案上限或百分比")
+		if percent < 0 || math.IsNaN(percent) || math.IsInf(percent, 0) {
+			return nil, fmt.Errorf("Cursor 百分比無效")
+		}
+		if limit := p.Limit / 100; limit > 0 && !math.IsNaN(limit) && !math.IsInf(limit, 0) {
+			used := percent / 100 * limit
+			r.Used, r.Limit = &used, &limit
+		}
+		r.PercentUsed = &percent
+	} else if !r.Usable() {
+		return nil, fmt.Errorf("Cursor 未提供可計算的方案用量百分比")
 	}
-	if percent < 0 || math.IsNaN(percent) || math.IsInf(percent, 0) {
-		return nil, fmt.Errorf("Cursor 百分比無效")
-	}
-	r.PercentUsed = &percent
 	if n, err := result.BillingCycleEnd.Float64(); err == nil {
 		if reset, ok := record.EpochToTime(n); ok {
 			r.ResetAt = &reset
 		}
 	}
 	r.Windows = []model.ReportedWindow{{Label: "帳單週期", PercentUsed: percent, ResetAt: r.ResetAt}}
-	for _, window := range []struct {
-		label string
-		value *float64
-	}{{"Auto / Composer", p.AutoPercentUsed}, {"API 模型", p.APIPercentUsed}} {
-		if window.value != nil && *window.value >= 0 && !math.IsNaN(*window.value) && !math.IsInf(*window.value, 0) {
-			r.Windows = append(r.Windows, model.ReportedWindow{Label: window.label, PercentUsed: *window.value, ResetAt: r.ResetAt})
+	return r, nil
+}
+
+func cursorUsageGroup(id, label string, percent, spend, limit *float64) model.ReportedGroup {
+	group := model.ReportedGroup{ID: id, Label: label}
+	valid := func(value *float64) bool {
+		return value != nil && *value >= 0 && !math.IsNaN(*value) && !math.IsInf(*value, 0)
+	}
+	if valid(spend) {
+		usd := *spend / 100
+		group.Used = &usd
+	}
+	if valid(limit) && *limit > 0 {
+		usd := *limit / 100
+		group.Limit = &usd
+	}
+	if valid(percent) {
+		value := *percent
+		group.PercentUsed = &value
+	} else if group.Used != nil && group.Limit != nil {
+		value := *group.Used / *group.Limit * 100
+		if !math.IsNaN(value) && !math.IsInf(value, 0) {
+			group.PercentUsed = &value
 		}
 	}
-	return r, nil
+	return group
 }
 
 func requestCursorUsage(ctx context.Context, client *http.Client, token, source string) (*model.Reported, error) {
