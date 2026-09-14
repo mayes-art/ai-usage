@@ -53,6 +53,13 @@ func Report(w io.Writer, snap model.Snapshot) {
 			detail += "，" + p.Detail
 		}
 		fmt.Fprintln(w, detail)
+		for _, group := range p.UsageGroups {
+			percent := "—%"
+			if group.Percent != nil {
+				percent = fmt.Sprintf("%.0f%%", *group.Percent*100)
+			}
+			fmt.Fprintf(w, "  %s: %s\n", group.Label, percent)
+		}
 		if len(p.Models) > 0 {
 			var parts []string
 			for _, m := range p.Models {

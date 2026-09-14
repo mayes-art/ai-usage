@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"aiusage/internal/config"
+	"aiusage/internal/model"
 )
 
 // OpenBrowser 在 Windows 上優先用 Edge 的 app 模式開一個沒有網址列的視窗，
@@ -24,16 +25,7 @@ func OpenBrowser(url string) {
 			if _, err := os.Stat(exe); err != nil {
 				continue
 			}
-			count := 0
-			for _, installed := range InstalledProviders() {
-				if installed {
-					count++
-				}
-			}
-			height := 146 + 80*count
-			if height < 230 {
-				height = 230
-			}
+			height := panelHeight(InstalledProviders())
 			// A dedicated profile isolates app geometry, cookies and browser
 			// processes from the user's ordinary Edge/Chrome session.
 			profile := filepath.Join(config.ConfigDir(), "panel-browser")
@@ -62,6 +54,19 @@ func OpenBrowser(url string) {
 	if err := cmd.Start(); err != nil {
 		Logf("（無法自動開啟瀏覽器，請手動貼上網址）")
 	}
+}
+
+func panelHeight(installed map[string]bool) int {
+	height := 146
+	for _, present := range installed {
+		if present {
+			height += 80
+		}
+	}
+	if installed[model.ProviderCursor] {
+		height += 112 // two always-visible model pools, including amount/status text
+	}
+	return max(height, 230)
 }
 
 func panelBrowserArgs(url, profile string, height int) []string {

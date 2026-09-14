@@ -14,3 +14,14 @@ func TestPanelBrowserIsolated(t *testing.T) {
 		}
 	}
 }
+
+func TestPanelHeightIncludesVisibleCursorPools(t *testing.T) {
+	without := panelHeight(map[string]bool{"codex": true, "claude": true, "cursor": false})
+	with := panelHeight(map[string]bool{"codex": true, "claude": true, "cursor": true})
+	if with-without != 80+112 {
+		t.Fatalf("Cursor card and pools need extra height: %d -> %d", without, with)
+	}
+	if panelHeight(nil) != 230 {
+		t.Fatal("minimum panel height changed")
+	}
+}

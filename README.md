@@ -29,6 +29,22 @@ Linux 目前不做安裝過濾。舊設定中的 `gemini` 會在載入時移除�
 - [Cursor 登入來源、計量與重試規則](docs/providers/cursor.md)
 - [Antigravity 模型群額度與本機服務](docs/providers/antigravity.md)
 
+## 發行流程
+
+發行採用 Release PR 作為人工核准點，不直接以手動推送 tag 發布：
+
+1. 功能與修正 PR 以 Conventional Commits 格式合併到 `main`。
+2. GitHub Actions 會建立或更新 `chore(main): release ...` PR，集中版本號與變更紀錄。
+3. 人工審查並合併 Release PR 後，Actions 先執行測試、靜態檢查及六平台建置。
+4. 全部成功後才建立 tag、上傳產物並公開 GitHub Release；暫時性失敗可直接重跑。
+
+`feat:`、`fix:` 與 breaking change 會依 SemVer 決定下一版；目前在 `0.x` 階段，
+`feat:` 採 patch bump。內建版本號由 Release PR 同步更新，不需手動改 tag。
+GitHub repository 必須允許 Actions 建立 PR；若要強制不同人核准，請在 `main` 的
+branch ruleset 啟用「Require a pull request」與至少一位 approving review。
+若測試或建置因程式瑕疵持續失敗，需先以新 PR 修正，再由下一張 Release PR 發布；
+首次 Release PR 合併也應確認 tag、資產與 release notes 的端對端結果。
+
 ## 使用 Docker 建置
 
 需要 Docker，並使用 **Linux containers**。主機不需安裝 Go；每次建置透過
@@ -130,7 +146,8 @@ Windows 開機自動啟動：`Win+R` → `shell:startup`，放入 `aiusage-panel
   顯示 `—%`；這不等於已使用 0%。
 - **多重限制**：Codex 通常顯示較短視窗，其他視窗放在詳細資訊；Claude 會列出來源提供的
   5 小時、7 天等限制。Antigravity 顯示使用比例最高的模型群限制，其餘分列。
-  Cursor 顯示帳單週期，並保留來源提供的 Auto / Composer、API 模型百分比。
+  Cursor 顯示帳單週期，並在主列下直接列出 Cursor model、Other model 各自的百分比與進度條；
+  方案總百分比移至詳細資訊，缺少分項資料顯示 `—%`。
 - **重置時間**：有官方重置時間時採用回報值。本機滾動視窗的「最舊紀錄滑出」
   只表示一筆紀錄即將離開統計範圍，不表示帳號額度全部重置。
 - **警戒與狀態**：低於警戒線使用來源色，達警戒線轉黃，達 100% 轉紅；
@@ -281,6 +298,10 @@ scripts/release.sh    測試與跨平台建置
 詳細的 SOLID 對應、來源擴充契約、依賴圖及已知限制見 [架構說明](docs/architecture.md)。
 新增來源透過 `Collector` registry 與 `ProviderPolicy` 接入，service 不依賴具體來源。
 設定採深拷貝，只有儲存成功後才更新執行中的設定。
+
+接續開發可先讀 [專案記憶](docs/project-memory.md)，快速找到需求對應的程式位置、
+計量規則與驗證方式；AI 協作入口為 [AGENTS.md](AGENTS.md)。
+本次程式檢視發現及測試範圍見 [2026-09-14 檢視紀錄](docs/review-2026-09-14.md)。
 
 只執行測試及靜態檢查（PowerShell）：
 

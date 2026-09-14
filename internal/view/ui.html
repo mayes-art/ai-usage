@@ -288,6 +288,16 @@
   .meta .bit { white-space: normal; overflow-wrap: anywhere; }
   footer { margin-top: 8px; padding-top: 6px; font-size: 10px; gap: 3px 8px; }
   .empty { color: var(--text-dim); padding: 30px 8px; text-align: center; }
+  .usage-groups { margin: 8px 0 2px 8px; padding-left: 9px; border-left: 1px solid var(--rule-strong); }
+  .usage-group + .usage-group { margin-top: 9px; }
+  .group-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 11px; }
+  .group-percent { font-size: 15px; font-weight: 600; color: var(--agent); }
+  .group-percent.warn { color: var(--warn); }
+  .group-percent.crit { color: var(--crit); }
+  .group-percent.none { color: var(--text-faint); }
+  .usage-group .fill.warn { background: var(--warn); }
+  .usage-group .fill.crit { background: var(--crit); }
+  .group-note { font-size: 10px; color: var(--text-faint); }
 </style>
 </head>
 <body>
@@ -368,9 +378,10 @@ function buildRow(p, now, keepEditor) {
 
   // has_limit 由後端決定：可能是手動上限，也可能是紀錄裡的官方回報百分比。
   const hasLimit = !!p.has_limit;
+  const grouped = p.id === 'cursor' && p.limit_source !== 'manual';
   let level = '';
-  if (hasLimit && p.percent >= 1) level = 'crit';
-  else if (hasLimit && p.percent >= p.warn_ratio) level = 'warn';
+  if (!grouped && hasLimit && p.percent >= 1) level = 'crit';
+  else if (!grouped && hasLimit && p.percent >= p.warn_ratio) level = 'warn';
 
   let dotClass = 'dot';
   if (p.status === 'ok' || p.status === 'manual') dotClass += ' ' + (level || '');
@@ -396,7 +407,11 @@ function buildRow(p, now, keepEditor) {
 
   const pctEl = head.querySelector('.pct');
   const amtEl = head.querySelector('.amounts');
-  if (hasLimit) {
+  if (grouped) {
+    pctEl.className = 'group-note';
+    pctEl.textContent = '分項用量';
+    pctEl.title = '兩個額度池分別計算，不合併為單一百分比';
+  } else if (hasLimit) {
     pctEl.className = 'pct ' + level;
     pctEl.innerHTML = fmtPct(p.percent) + '<span class="sign">%</span>';
     pctEl.title = '用量 ÷ 總量';
@@ -410,7 +425,9 @@ function buildRow(p, now, keepEditor) {
 
   const used = fmtNum(p.used, p.metric);
   const unit = metricWord(p.metric);
-  if (hasLimit && p.show_limit) {
+  if (grouped && !hasLimit) {
+    amtEl.textContent = '模型池各自計量；尚無可用方案總額';
+  } else if (hasLimit && p.show_limit) {
     amtEl.innerHTML = escapeHtml(used) + '<span class="sep">/</span>' +
       escapeHtml(fmtNum(p.limit, p.metric)) + ' <span class="unit">' + unit + '</span>';
   } else if (hasLimit && p.id === 'antigravity') {
@@ -443,7 +460,8 @@ function buildRow(p, now, keepEditor) {
     marker.title = '警戒線 ' + Math.round(p.warn_ratio * 100) + '%';
     track.appendChild(marker);
   }
-  row.appendChild(track);
+  if (!grouped) row.appendChild(track);
+  if (p.id === 'cursor') row.appendChild(buildUsageGroups(p));
 
   const toggle = document.createElement('button');
   toggle.className = 'detail-toggle';
@@ -476,7 +494,9 @@ function buildRow(p, now, keepEditor) {
   const bit = (label, value) =>
     bits.push('<span class="bit"><span class="label">' + escapeHtml(label) + '</span><b>' + value + '</b></span>');
 
-  if (hasLimit && p.percent > 1) {
+  if (grouped && hasLimit) {
+    bit('方案總用量（非各模型池）', fmtPct(p.percent) + '%');
+  } else if (hasLimit && p.percent > 1) {
     bit('已超出上限', fmtPct(p.percent - 1) + '%');
   } else if (hasLimit) {
     bit('剩餘', fmtPct(1 - p.percent) + '%' +
@@ -539,6 +559,64 @@ function buildRow(p, now, keepEditor) {
   // 上限設定
   details.appendChild(buildLimitForm(p, keepEditor, hasLimit));
   return row;
+}
+
+function buildUsageGroups(p) {
+  const wrap = document.createElement('div');
+  wrap.className = 'usage-groups';
+  wrap.setAttribute('aria-label', 'Cursor 模型用量');
+  const groups = p.usage_groups || [];
+  for (const [id, label] of [['cursor-model', 'Cursor model'], ['other-model', 'Other model']]) {
+    const group = groups.find(g => g.id === id);
+    const percent = group?.percent;
+    const known = p.status !== 'disabled' && p.limit_source === 'reported' &&
+      typeof percent === 'number' && Number.isFinite(percent) && percent >= 0;
+    const level = known ? (percent >= 1 ? 'crit' : percent >= p.warn_ratio ? 'warn' : '') : 'none';
+    const item = document.createElement('div');
+    item.className = 'usage-group';
+    item.dataset.group = id;
+    const heading = document.createElement('div');
+    heading.className = 'group-heading';
+    const name = document.createElement('span');
+    name.textContent = label;
+    const value = document.createElement('span');
+    value.className = 'group-percent ' + level;
+    value.textContent = known ? fmtPct(percent) + '%' : '—%';
+    heading.append(name, value);
+    item.appendChild(heading);
+    const track = document.createElement('div');
+    track.className = 'track' + (known ? '' : ' unset');
+    track.setAttribute('role', 'progressbar');
+    track.setAttribute('aria-label', label + ' 已使用');
+    if (known) {
+      track.setAttribute('aria-valuemin', '0');
+      track.setAttribute('aria-valuemax', '100');
+      track.setAttribute('aria-valuenow', String(Math.min(percent * 100, 100)));
+      track.setAttribute('aria-valuetext', fmtPct(percent) + '% 已使用');
+      const fill = document.createElement('div');
+      fill.className = 'fill ' + level;
+      fill.style.width = Math.min(percent * 100, 100) + '%';
+      track.appendChild(fill);
+    } else {
+      track.setAttribute('aria-valuetext', '尚無分項資料');
+    }
+    item.appendChild(track);
+    if (!known || (group.used != null && group.limit != null)) {
+      const note = document.createElement('div');
+      note.className = 'group-note';
+      note.textContent = known ? fmtNum(group.used, 'usd') + ' / ' + fmtNum(group.limit, 'usd') + ' USD' :
+        p.status === 'disabled' ? '已停用' : p.limit_source === 'manual' ? '手動總額不含分項資料' : '尚無分項資料';
+      item.appendChild(note);
+    }
+    wrap.appendChild(item);
+  }
+  if (p.quota_stale) {
+    const note = document.createElement('div');
+    note.className = 'group-note';
+    note.textContent = '額度資料較舊，請重新掃描或檢查登入';
+    wrap.appendChild(note);
+  }
+  return wrap;
 }
 
 function buildLimitForm(p, keepEditor, hasLimit) {
