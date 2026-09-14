@@ -2,47 +2,50 @@ name: Release
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches:
+      - main
   workflow_dispatch:
-    inputs:
-      tag:
-        description: Tag to build and publish
-        required: true
-        type: string
 
 permissions:
   contents: write
+  issues: write
+  pull-requests: write
 
 jobs:
   release:
     runs-on: ubuntu-latest
-    env:
-      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
 
     steps:
-      - name: Check out release tag
+      - name: Create or update release PR
+        id: release
+        uses: googleapis/release-please-action@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+      - name: Check out released source
+        if: ${{ steps.release.outputs.release_created == 'true' }}
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          ref: ${{ steps.release.outputs.tag_name }}
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        if: ${{ steps.release.outputs.release_created == 'true' }}
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
 
-      - name: Test
-        run: go test -race ./...
-
-      - name: Vet
-        run: go vet ./...
-
-      - name: Build release binaries
+      - name: Test, vet, and build release binaries
+        if: ${{ steps.release.outputs.release_created == 'true' }}
         run: sh scripts/release.sh
 
       - name: Package release assets
+        if: ${{ steps.release.outputs.release_created == 'true' }}
         shell: bash
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag_name }}
         run: |
           set -euo pipefail
           release_dir="dist/releases"
@@ -52,21 +55,19 @@ jobs:
             tar -czf "$assets_dir/aiusage-${RELEASE_TAG}-${target}.tar.gz" \
               -C "$release_dir" "$target"
           done
-          cp "$release_dir/BUILDINFO.txt" "$release_dir/SHA256SUMS" "$assets_dir/"
+          cp "$release_dir/BUILDINFO.txt" "$assets_dir/"
+          cp "$release_dir/SHA256SUMS" "$assets_dir/BINARY-SHA256SUMS"
           (
             cd "$assets_dir"
             sha256sum aiusage-*.tar.gz > SHA256SUMS
           )
 
-      - name: Publish GitHub Release
+      - name: Attach assets and publish release
+        if: ${{ steps.release.outputs.release_created == 'true' }}
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag_name }}
         run: |
           set -euo pipefail
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" dist/releases/assets/* --clobber
-          else
-            gh release create "$RELEASE_TAG" dist/releases/assets/* \
-              --title "aiusage $RELEASE_TAG" \\
-              --generate-notes
-          fi
+          gh release upload "$RELEASE_TAG" dist/releases/assets/* --clobber
+          gh release edit "$RELEASE_TAG" --draft=false

@@ -29,6 +29,20 @@ Linux 目前不做安裝過濾。舊設定中的 `gemini` 會在載入時移除�
 - [Cursor 登入來源、計量與重試規則](docs/providers/cursor.md)
 - [Antigravity 模型群額度與本機服務](docs/providers/antigravity.md)
 
+## 發行流程
+
+發行採用 Release PR 作為人工核准點，不直接以手動推送 tag 發布：
+
+1. 功能與修正 PR 以 Conventional Commits 格式合併到 `main`。
+2. GitHub Actions 會建立或更新 `chore(main): release ...` PR，集中版本號與變更紀錄。
+3. 人工審查並合併 Release PR 後，Actions 才建立 tag 與草稿 GitHub Release。
+4. 測試、靜態檢查及六平台建置全部成功後，Actions 上傳產物並公開 Release。
+
+`feat:`、`fix:` 與 breaking change 會依 SemVer 決定下一版；目前在 `0.x` 階段，
+`feat:` 採 patch bump。內建版本號由 Release PR 同步更新，不需手動改 tag。
+GitHub repository 必須允許 Actions 建立 PR；若要強制不同人核准，請在 `main` 的
+branch ruleset 啟用「Require a pull request」與至少一位 approving review。
+
 ## 使用 Docker 建置
 
 需要 Docker，並使用 **Linux containers**。主機不需安裝 Go；每次建置透過
