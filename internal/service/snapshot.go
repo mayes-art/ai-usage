@@ -164,6 +164,8 @@ func (s *Store) providerSnapshot(p model.ProviderConfig, now time.Time) model.Pr
 			}
 			if r.ResetAt != nil {
 				winEnd = *r.ResetAt
+				t := r.ResetAt.Unix()
+				ps.QuotaResetAt = &t
 			}
 			for _, group := range r.Groups {
 				g := model.UsageGroup{ID: group.ID, Label: group.Label}
@@ -187,6 +189,11 @@ func (s *Store) providerSnapshot(p model.ProviderConfig, now time.Time) model.Pr
 				// 進度條畫最短的那個窗，其餘的原樣帶到細節列。
 				if l := r.Windows[0].Label; l != "" {
 					ps.WindowLabel = l + "窗"
+				}
+				if r.Windows[0].ResetAt != nil {
+					winEnd = *r.Windows[0].ResetAt
+					t := r.Windows[0].ResetAt.Unix()
+					ps.QuotaResetAt = &t
 				}
 				for _, w := range r.Windows[1:] {
 					lw := model.LimitWindow{Label: w.Label, Percent: w.PercentUsed / 100}

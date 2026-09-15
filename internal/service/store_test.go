@@ -41,7 +41,7 @@ func testConfig() *model.Config {
 		Providers: []model.ProviderConfig{{ID: "test", Name: "Test", Enabled: true, Metric: "tokens", WindowKind: "rolling", WindowSeconds: 18000}}}
 }
 
-func testStore(collector *fakeCollector) *Store {
+func testStore(collector Collector) *Store {
 	return New(testConfig(), nil, map[string]Collector{"test": collector}, nil)
 }
 
@@ -199,4 +199,97 @@ func TestConcurrentScanRescanAndSettings(t *testing.T) {
 		}(task)
 	}
 	group.Wait()
+}
+
+type quotaCollector struct {
+	fakeCollector
+	invalidations int
+}
+
+func (q *quotaCollector) InvalidateQuotaCache() { q.invalidations++ }
+
+func quotaBatch(at time.Time, percent float64, reset time.Time) model.Collection {
+	p, r := percent, reset
+	return model.Collection{Reported: &model.Reported{At: at, Source: "帳號額度", PercentUsed: &p, ResetAt: &r}}
+}
+
+func TestQuotaResetAtComesOnlyFromReport(t *testing.T) {
+	now := time.Now()
+	reset := now.Add(90 * time.Minute)
+	s := testStore(&fakeCollector{batches: []model.Collection{quotaBatch(now, 40, reset)}})
+	s.ScanOnce()
+	p := s.Snapshot().Providers[0]
+	if p.QuotaResetAt == nil || *p.QuotaResetAt != reset.Unix() {
+		t.Fatalf("reported reset missing from quota countdown: %+v", p)
+	}
+
+	local := testStore(&fakeCollector{batches: []model.Collection{{
+		Events: []model.Event{{At: now.Add(-time.Hour), Usage: model.Usage{Input: 10}, Key: "k"}},
+	}}})
+	local.ScanOnce()
+	p = local.Snapshot().Providers[0]
+	if p.QuotaResetAt != nil {
+		t.Fatalf("local slide reported as a quota reset: %+v", p)
+	}
+	if p.ResetAt == nil || p.ResetLabel != "最舊紀錄滑出" {
+		t.Fatalf("local slide lost: %+v", p)
+	}
+}
+
+func TestRefreshDueQuotasActsOncePerResetBoundary(t *testing.T) {
+	base := time.Now()
+	first, second := base.Add(time.Hour), base.Add(3*time.Hour)
+	collector := &quotaCollector{fakeCollector: fakeCollector{batches: []model.Collection{
+		quotaBatch(base, 40, first),
+		quotaBatch(base.Add(time.Hour), 5, second),
+	}}}
+	s := testStore(collector)
+	s.now = func() time.Time { return base }
+	s.ScanOnce()
+
+	s.now = func() time.Time { return base.Add(30 * time.Minute) }
+	if s.RefreshDueQuotas() || collector.invalidations != 0 {
+		t.Fatalf("refreshed before the reported reset: %d", collector.invalidations)
+	}
+
+	s.now = func() time.Time { return first.Add(time.Second) }
+	if !s.RefreshDueQuotas() || collector.invalidations != 1 || collector.calls != 2 {
+		t.Fatalf("reset boundary missed: invalidations=%d calls=%d", collector.invalidations, collector.calls)
+	}
+	if got := s.Snapshot().Providers[0].Percent; got != .05 {
+		t.Fatalf("refreshed quota not applied: %v", got)
+	}
+
+	if s.RefreshDueQuotas() || collector.calls != 2 {
+		t.Fatalf("same boundary collected twice: calls=%d", collector.calls)
+	}
+
+	s.now = func() time.Time { return second.Add(time.Second) }
+	if !s.RefreshDueQuotas() || collector.invalidations != 2 {
+		t.Fatalf("next boundary ignored: %d", collector.invalidations)
+	}
+}
+
+func TestRefreshDueQuotasNeedsReportPreferenceAndHook(t *testing.T) {
+	base := time.Now()
+	reset := base.Add(time.Hour)
+	plain := &fakeCollector{batches: []model.Collection{quotaBatch(base, 40, reset)}}
+	s := testStore(plain)
+	s.now = func() time.Time { return base }
+	s.ScanOnce()
+	s.now = func() time.Time { return reset.Add(time.Second) }
+	if s.RefreshDueQuotas() || plain.calls != 1 {
+		t.Fatalf("source without the cache hook was collected: %d", plain.calls)
+	}
+
+	cfg := testConfig()
+	cfg.PreferReported = false
+	collector := &quotaCollector{fakeCollector: fakeCollector{batches: []model.Collection{quotaBatch(base, 40, reset)}}}
+	off := New(cfg, nil, map[string]Collector{"test": collector}, nil)
+	off.now = func() time.Time { return base }
+	off.ScanOnce()
+	off.now = func() time.Time { return reset.Add(time.Second) }
+	if off.RefreshDueQuotas() || collector.invalidations != 0 {
+		t.Fatalf("manual-limit mode still forced an account query: %d", collector.invalidations)
+	}
 }

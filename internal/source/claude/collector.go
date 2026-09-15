@@ -36,6 +36,9 @@ func (c *Collector) Reset() {
 	c.reported, c.org, c.initialized = nil, "", false
 }
 
+// Claude 每次收集都會重讀快照，這個 hook 只是讓它加入重置邊界收集。
+func (c *Collector) InvalidateQuotaCache() {}
+
 func (c *Collector) Collect(p model.ProviderConfig, cutoff time.Time, collectKeys bool) model.Collection {
 	changedOrg := c.initialized && c.org != p.ClaudeOrg
 	if changedOrg {

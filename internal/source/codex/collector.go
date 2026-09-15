@@ -26,6 +26,8 @@ func (c *Collector) Reset() {
 	c.liveAt, c.live, c.liveError = time.Time{}, nil, ""
 }
 
+func (c *Collector) InvalidateQuotaCache() { c.liveAt = time.Time{} }
+
 func (c *Collector) Collect(p model.ProviderConfig, cutoff time.Time, collectKeys bool) model.Collection {
 	out := c.logs.Collect(p, cutoff, collectKeys)
 	if time.Since(c.liveAt) >= 30*time.Second {

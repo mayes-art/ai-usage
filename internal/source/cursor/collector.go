@@ -29,6 +29,8 @@ func (c *Collector) Policy() model.ProviderPolicy {
 
 func (c *Collector) Reset() { c.next, c.cached = time.Time{}, model.Collection{} }
 
+func (c *Collector) InvalidateQuotaCache() { c.next = time.Time{} }
+
 func (c *Collector) Collect(p model.ProviderConfig, _ time.Time, _ bool) model.Collection {
 	if time.Now().Before(c.next) {
 		return c.cached

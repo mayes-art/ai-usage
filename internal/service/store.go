@@ -19,6 +19,11 @@ type Collector interface {
 	Reset()
 }
 
+// QuotaCacheInvalidator 讓 Store 強制重讀一次帳號額度，但不丟掉檔案位移與本機累計。
+type QuotaCacheInvalidator interface {
+	InvalidateQuotaCache()
+}
+
 // ConfigRepository persists settings without coupling calculations to files.
 type ConfigRepository interface {
 	Save(*model.Config) error
@@ -41,6 +46,9 @@ type Store struct {
 	collectKeys bool
 	host        string
 	scanDur     time.Duration
+
+	// 同一個回報重置邊界只重讀一次。
+	refreshedResets map[string]map[int64]struct{}
 }
 
 func New(cfg *model.Config, repository ConfigRepository, collectors map[string]Collector, installed func() map[string]bool) *Store {
@@ -62,6 +70,7 @@ func (s *Store) clear() {
 	s.reported = map[string]*model.Reported{}
 	s.stats = map[string]*model.ScanStats{}
 	s.diagnoses = map[string]model.Diagnosis{}
+	s.refreshedResets = map[string]map[int64]struct{}{}
 }
 
 // Config returns a detached value so callers cannot mutate running settings.
@@ -120,6 +129,9 @@ func (s *Store) ScanOnce() {
 		if collector == nil {
 			batch.Stats.Errors = []string{fmt.Sprintf("尚未註冊來源 %s", provider.ID)}
 		} else {
+			if invalidator, ok := collector.(QuotaCacheInvalidator); ok && s.takeDueQuotaReset(provider.ID, start, cfg.PreferReported) {
+				invalidator.InvalidateQuotaCache()
+			}
 			batch = collector.Collect(provider, cutoff, keys)
 		}
 		s.mu.Lock()
@@ -130,6 +142,82 @@ func (s *Store) ScanOnce() {
 	s.scanDur = s.now().Sub(start)
 	s.prune(cutoff)
 	s.mu.Unlock()
+}
+
+// RefreshDueQuotas 只收集回報重置時間已到的來源。
+func (s *Store) RefreshDueQuotas() bool {
+	s.scanMu.Lock()
+	defer s.scanMu.Unlock()
+	now := s.now()
+	s.mu.RLock()
+	cfg, keys := s.cfg.Clone(), s.collectKeys
+	s.mu.RUnlock()
+	if !cfg.PreferReported {
+		return false
+	}
+	cutoff := now.AddDate(0, 0, -cfg.RetentionDays)
+	refreshed := false
+	for _, provider := range cfg.Providers {
+		if !provider.Enabled {
+			continue
+		}
+		collector := s.collectors[provider.ID]
+		invalidator, ok := collector.(QuotaCacheInvalidator)
+		if !ok || !s.takeDueQuotaReset(provider.ID, now, true) {
+			continue
+		}
+		invalidator.InvalidateQuotaCache()
+		batch := collector.Collect(provider, cutoff, keys)
+		s.mu.Lock()
+		s.apply(provider, batch, cutoff)
+		s.mu.Unlock()
+		refreshed = true
+	}
+	if refreshed {
+		s.mu.Lock()
+		s.prune(cutoff)
+		s.mu.Unlock()
+	}
+	return refreshed
+}
+
+func (s *Store) takeDueQuotaReset(provider string, now time.Time, preferReported bool) bool {
+	if !preferReported {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	report := s.reported[provider]
+	if report == nil || !report.Usable() || now.Sub(report.At) >= 24*time.Hour {
+		return false
+	}
+	var resets []time.Time
+	if report.ResetAt != nil {
+		resets = append(resets, *report.ResetAt)
+	}
+	for _, window := range report.Windows {
+		if window.ResetAt != nil {
+			resets = append(resets, *window.ResetAt)
+		}
+	}
+	seen := s.refreshedResets[provider]
+	if seen == nil {
+		seen = map[int64]struct{}{}
+		s.refreshedResets[provider] = seen
+	}
+	due := false
+	for _, reset := range resets {
+		stamp := reset.Unix()
+		if stamp <= 0 || reset.After(now) {
+			continue
+		}
+		if _, exists := seen[stamp]; exists {
+			continue
+		}
+		seen[stamp] = struct{}{}
+		due = true
+	}
+	return due
 }
 
 func (s *Store) apply(provider model.ProviderConfig, batch model.Collection, cutoff time.Time) {
