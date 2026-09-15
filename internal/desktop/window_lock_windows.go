@@ -37,6 +37,8 @@ func panelBrowserPIDs() map[uint32]bool {
 	return out
 }
 
+type panelRect struct{ Left, Top, Right, Bottom int32 }
+
 func LockPanelWindows() {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -50,15 +52,50 @@ func LockPanelWindows() {
 	setPos := user.NewProc("SetWindowPos")
 	getRect := user.NewProc("GetWindowRect")
 	getDPI := user.NewProc("GetDpiForWindow")
+	getCursor := user.NewProc("GetCursorPos")
+	setLayeredAttributes := user.NewProc("SetLayeredWindowAttributes")
+	getLayeredAttributes := user.NewProc("GetLayeredWindowAttributes")
 	isIconic := user.NewProc("IsIconic")
 	isZoomed := user.NewProc("IsZoomed")
 	show := user.NewProc("ShowWindow")
 	menuProc := user.NewProc("GetSystemMenu")
 	enableMenu := user.NewProc("EnableMenuItem")
+
+	windowRect := func(hwnd uintptr) panelRect {
+		var rect panelRect
+		getRect.Call(hwnd, uintptr(unsafe.Pointer(&rect)))
+		return rect
+	}
+	wantAlpha := func(hwnd uintptr) byte {
+		var point struct{ X, Y int32 }
+		if ok, _, _ := getCursor.Call(uintptr(unsafe.Pointer(&point))); ok == 0 {
+			return panelAlpha
+		}
+		rect := windowRect(hwnd)
+		if cursorOverPanel(point.X, point.Y, rect.Left, rect.Top, rect.Right, rect.Bottom) {
+			return panelAlphaHover
+		}
+		return panelAlpha
+	}
+	currentAlpha := func(hwnd uintptr) (byte, bool) {
+		var alpha byte
+		var flags uint32
+		result, _, _ := getLayeredAttributes.Call(hwnd, 0, uintptr(unsafe.Pointer(&alpha)), uintptr(unsafe.Pointer(&flags)))
+		return alpha, result != 0 && flags&0x00000002 != 0 // LWA_ALPHA
+	}
+	applyAlpha := func(hwnd uintptr, want byte) {
+		if alpha, ok := currentAlpha(hwnd); ok && alpha == want {
+			return
+		}
+		setLayeredAttributes.Call(hwnd, 0, uintptr(want), 0x00000002)
+	}
+
 	var pids map[uint32]bool
+	var panels []uintptr
 	last := time.Time{}
-	logged := map[uintptr]bool{}
-	height := panelHeight(InstalledProviders())
+	configured := map[uintptr]bool{}
+	failed := map[uintptr]bool{}
+	width, height := panelSize(InstalledProviders())
 	callback := syscall.NewCallback(func(hwnd, unused uintptr) uintptr {
 		var pid uint32
 		pidProc.Call(hwnd, uintptr(unsafe.Pointer(&pid)))
@@ -70,6 +107,7 @@ func LockPanelWindows() {
 		if syscall.UTF16ToString(title[:]) != "AI 用量" {
 			return 1
 		}
+		panels = append(panels, hwnd)
 		if minimized, _, _ := isIconic.Call(hwnd); minimized != 0 {
 			return 1
 		}
@@ -89,27 +127,60 @@ func LockPanelWindows() {
 		if dpi == 0 {
 			dpi = 96
 		}
-		width, wheight := int32(360*dpi/96), int32(uintptr(height)*dpi/96)
-		var rect struct{ Left, Top, Right, Bottom int32 }
-		getRect.Call(hwnd, uintptr(unsafe.Pointer(&rect)))
-		if style != fixed || rect.Right-rect.Left != width || rect.Bottom-rect.Top != wheight {
-			setPos.Call(hwnd, 0, 0, 0, uintptr(width), uintptr(wheight), 0x0002|0x0004|0x0010|0x0020)
+		scaledWidth, scaledHeight := int32(uintptr(width)*dpi/96), int32(uintptr(height)*dpi/96)
+		rect := windowRect(hwnd)
+		exIndex := ^uintptr(19) // GWL_EXSTYLE = -20
+		exStyle, _, _ := getStyle.Call(hwnd, exIndex)
+		layered := exStyle | uintptr(0x00080000) // WS_EX_LAYERED
+		if exStyle != layered {
+			setStyle.Call(hwnd, exIndex, layered)
+		}
+		want := wantAlpha(hwnd)
+		applyAlpha(hwnd, want)
+		topmost := exStyle&uintptr(0x00000008) != 0 // WS_EX_TOPMOST
+		if !configured[hwnd] || style != fixed || exStyle != layered || !topmost || rect.Right-rect.Left != scaledWidth || rect.Bottom-rect.Top != scaledHeight {
+			setPos.Call(hwnd, ^uintptr(0), 0, 0, uintptr(scaledWidth), uintptr(scaledHeight), 0x0002|0x0010|0x0020)
 		}
 		verified, _, _ := getStyle.Call(hwnd, index)
-		if !logged[hwnd] && verified&uintptr(0x50000) == 0 {
-			Logf("面板視窗尺寸已鎖定：360 × %d；保留移動、最小化與關閉。", height)
-			logged[hwnd] = true
+		verifiedEx, _, _ := getStyle.Call(hwnd, exIndex)
+		rect = windowRect(hwnd)
+		alpha, alphaOK := currentAlpha(hwnd)
+		ok := verified&uintptr(0x50000) == 0 &&
+			verifiedEx&uintptr(0x00080008) == uintptr(0x00080008) &&
+			rect.Right-rect.Left == scaledWidth && rect.Bottom-rect.Top == scaledHeight &&
+			alphaOK && alpha == want
+		if !configured[hwnd] && ok {
+			Logf("面板視窗已設為最上層並鎖定：%d × %d；平常 %d%% 不透明，滑鼠移入時完全不透明。保留移動、最小化與關閉。",
+				width, height, panelOpacityPercent)
 		}
+		if !ok && !failed[hwnd] {
+			Logf("面板視窗樣式尚未完整套用，將在背景重試。")
+			failed[hwnd] = true
+		}
+		configured[hwnd] = ok
 		return 1
 	})
-	tick := time.NewTicker(time.Second)
+	tick := time.NewTicker(125 * time.Millisecond)
 	defer tick.Stop()
+	full := time.Time{}
 	for {
 		if time.Since(last) > 10*time.Second {
 			pids = panelBrowserPIDs()
 			last = time.Now()
 		}
-		enum.Call(callback, 0)
+		if time.Since(full) >= time.Second {
+			panels = panels[:0]
+			enum.Call(callback, 0)
+			publishPanelWindows(panels)
+			full = time.Now()
+		} else {
+			for _, hwnd := range panels {
+				if minimized, _, _ := isIconic.Call(hwnd); minimized != 0 {
+					continue
+				}
+				applyAlpha(hwnd, wantAlpha(hwnd))
+			}
+		}
 		<-tick.C
 	}
 }

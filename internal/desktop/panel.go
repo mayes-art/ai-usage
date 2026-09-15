@@ -14,6 +14,40 @@ import (
 	"aiusage/internal/model"
 )
 
+const (
+	// 以下尺寸在 Edge app 視窗實測而來，不是估算；改版面後必須重新量，
+	// 否則預設狀態會出現垂直捲軸。
+	panelCardWidth  = 200
+	panelCardHeight = 98
+	panelRowGap     = 8
+
+	panelSideChrome = 36
+
+	// panelHeightSlack 吸收 DPI 進位：125% 縮放下標題列會在 36 與 38 之間跳。
+	panelPageChrome   = 98
+	panelWindowChrome = 38
+	panelHeightSlack  = 4
+	panelTopChrome    = panelPageChrome + panelWindowChrome + panelHeightSlack
+	panelMinHeight    = 260
+
+	panelCursorPools = 39
+
+	// alpha 是不透明度：0 全透明、255 全不透明。
+	panelOpacityPercent = 92
+	panelAlpha          = panelOpacityPercent * 255 / 100
+	panelAlphaHover     = 255
+)
+
+// 游標是否落在面板視窗的矩形內。
+func cursorOverPanel(x, y, left, top, right, bottom int32) bool {
+	return x >= left && x < right && y >= top && y < bottom
+}
+
+// PanelDragger 滿足 controller.PanelWindow。
+type PanelDragger struct{}
+
+func (PanelDragger) BeginDrag() { BeginPanelDrag() }
+
 // OpenBrowser 在 Windows 上優先用 Edge 的 app 模式開一個沒有網址列的視窗，
 // 這樣看起來就是個獨立小工具，而不是一個瀏覽器分頁。
 func OpenBrowser(url string) {
@@ -25,7 +59,7 @@ func OpenBrowser(url string) {
 			if _, err := os.Stat(exe); err != nil {
 				continue
 			}
-			height := panelHeight(InstalledProviders())
+			width, height := panelSize(InstalledProviders())
 			// A dedicated profile isolates app geometry, cookies and browser
 			// processes from the user's ordinary Edge/Chrome session.
 			profile := filepath.Join(config.ConfigDir(), "panel-browser")
@@ -33,7 +67,7 @@ func OpenBrowser(url string) {
 				Logf("無法建立面板專用視窗設定：%v", err)
 				return
 			}
-			cmd := exec.Command(exe, panelBrowserArgs(url, profile, height)...)
+			cmd := exec.Command(exe, panelBrowserArgs(url, profile, width, height)...)
 			if err := cmd.Start(); err == nil {
 				go func() { _ = cmd.Wait() }()
 				return
@@ -56,27 +90,32 @@ func OpenBrowser(url string) {
 	}
 }
 
-func panelHeight(installed map[string]bool) int {
-	height := 146
+func panelSize(installed map[string]bool) (width, height int) {
+	cards := 0
 	for _, present := range installed {
 		if present {
-			height += 80
+			cards++
 		}
 	}
-	if installed[model.ProviderCursor] {
-		height += 112 // two always-visible model pools, including amount/status text
+	width = panelCardWidth + panelSideChrome
+	height = panelTopChrome + cards*panelCardHeight
+	if cards > 1 {
+		height += (cards - 1) * panelRowGap
 	}
-	return max(height, 230)
+	if installed[model.ProviderCursor] {
+		height += panelCursorPools // two always-visible model pools
+	}
+	return width, max(height, panelMinHeight)
 }
 
-func panelBrowserArgs(url, profile string, height int) []string {
+func panelBrowserArgs(url, profile string, width, height int) []string {
 	return []string{
 		"--user-data-dir=" + profile,
 		"--no-first-run",
 		"--no-default-browser-check",
 		"--disable-background-mode",
 		"--app=" + url,
-		fmt.Sprintf("--window-size=360,%d", height),
+		fmt.Sprintf("--window-size=%d,%d", width, height),
 	}
 }
 

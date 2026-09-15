@@ -35,6 +35,8 @@ type ProviderSnapshot struct {
 	WindowLabel string `json:"window_label"`
 	ResetLabel  string `json:"reset_label"`
 	ResetAt     *int64 `json:"reset_at,omitempty"`
+	// QuotaResetAt 只來自帳號回報，本機滾動視窗事件不得寫入。
+	QuotaResetAt *int64 `json:"quota_reset_at,omitempty"`
 
 	Used        float64 `json:"used"`
 	Limit       float64 `json:"limit"`

@@ -122,6 +122,7 @@ func runPanel(cfg *model.Config, noBrowser bool) int {
 	server := controller.New(store)
 	if !noBrowser {
 		server.EnableWindowExit()
+		server.SetPanelWindow(desktop.PanelDragger{})
 	}
 	url, closeServer, err := server.Serve(cfg.Port)
 	if err != nil {
@@ -147,10 +148,14 @@ func runPanel(cfg *model.Config, noBrowser bool) int {
 	}
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
+	resetTicker := time.NewTicker(time.Second)
+	defer resetTicker.Stop()
 	for {
 		select {
 		case <-ticker.C:
 			store.ScanOnce()
+		case <-resetTicker.C:
+			store.RefreshDueQuotas()
 		case <-stop:
 			desktop.Logf("已結束。")
 			return 0
