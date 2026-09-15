@@ -26,11 +26,18 @@ type UsageService interface {
 	Rescan()
 	ScanOnce()
 }
+
+// PanelWindow 讓面板搬動自己的視窗；nil 表示這個組建做不到。
+type PanelWindow interface {
+	BeginDrag()
+}
+
 type Server struct {
 	store   UsageService
 	token   string
 	mux     *http.ServeMux
 	windows panelWindows
+	window  PanelWindow
 }
 
 // An SSE connection belongs to one panel window. Refresh/reconnect gets a
@@ -87,7 +94,11 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/limit", s.guard(s.handleLimit))
 	s.mux.HandleFunc("/api/rescan", s.guard(s.handleRescan))
 	s.mux.HandleFunc("/api/doctor", s.guard(s.handleDoctor))
+	s.mux.HandleFunc("/api/window/drag", s.guard(s.handleWindowDrag))
 }
+
+// SetPanelWindow 注入視窗操作實作。
+func (s *Server) SetPanelWindow(window PanelWindow) { s.window = window }
 
 // guard 只做兩件事：確認來自本機、確認帶對 token。
 // 面板綁在 127.0.0.1，token 防止本機其他網頁順手打這個埠。
@@ -145,11 +156,8 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Connection", "keep-alive")
 
-	interval := time.Duration(s.store.Config().RefreshSeconds) * time.Second
-	if interval < time.Second {
-		interval = time.Second
-	}
-	tick := time.NewTicker(interval)
+	// Snapshots stay prompt when a quota refreshes at its reset boundary.
+	tick := time.NewTicker(time.Second)
 	defer tick.Stop()
 
 	send := func() bool {
@@ -229,6 +237,19 @@ func (s *Server) handleRescan(w http.ResponseWriter, r *http.Request) {
 		s.store.Rescan()
 		s.store.ScanOnce()
 	}()
+	writeJSON(w, map[string]any{"ok": true})
+}
+
+func (s *Server) handleWindowDrag(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "只接受 POST", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.window == nil {
+		writeJSON(w, map[string]any{"ok": false})
+		return
+	}
+	s.window.BeginDrag()
 	writeJSON(w, map[string]any{"ok": true})
 }
 

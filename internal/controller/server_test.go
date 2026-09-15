@@ -89,3 +89,55 @@ func TestPanelAssetsAreServed(t *testing.T) {
 		}
 	}
 }
+
+type fakeWindow struct{ drags int }
+
+func (f *fakeWindow) BeginDrag() { f.drags++ }
+
+func TestWindowDragIsGuardedAndOptional(t *testing.T) {
+	post := func(s *Server, path, token, remote string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(http.MethodPost, path+"?t="+token, nil)
+		r.RemoteAddr = remote
+		w := httptest.NewRecorder()
+		s.mux.ServeHTTP(w, r)
+		return w
+	}
+
+	s := New(newFakeService())
+	window := &fakeWindow{}
+	s.SetPanelWindow(window)
+
+	const drag = "/api/window/drag"
+	if code := post(s, drag, s.token, "127.0.0.1:1234").Code; code != http.StatusOK {
+		t.Fatalf("authenticated status=%d", code)
+	}
+	if code := post(s, drag, "", "127.0.0.1:1234").Code; code != http.StatusForbidden {
+		t.Errorf("missing token status=%d", code)
+	}
+	if code := post(s, drag, s.token, "192.0.2.1:1234").Code; code != http.StatusForbidden {
+		t.Errorf("remote client status=%d", code)
+	}
+	if window.drags != 1 {
+		t.Fatalf("拖曳觸發次數不對：%d", window.drags)
+	}
+
+	r := httptest.NewRequest(http.MethodGet, "/api/window/drag?t="+s.token, nil)
+	r.RemoteAddr = "127.0.0.1:1234"
+	w := httptest.NewRecorder()
+	s.mux.ServeHTTP(w, r)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("GET status=%d", w.Code)
+	}
+
+	bare := New(newFakeService())
+	got := post(bare, drag, bare.token, "127.0.0.1:1234")
+	if got.Code != http.StatusOK {
+		t.Fatalf("no window status=%d", got.Code)
+	}
+	var body struct {
+		OK bool `json:"ok"`
+	}
+	if err := json.Unmarshal(got.Body.Bytes(), &body); err != nil || body.OK {
+		t.Fatalf("no window body=%s error=%v", got.Body.String(), err)
+	}
+}
