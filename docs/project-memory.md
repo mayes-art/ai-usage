@@ -1,7 +1,7 @@
 # aiusage 專案記憶
 
-最後核對：2026-09-15；程式基準：`6c763fe`（MVC 分層與跨平台發行）。
-後續工作目錄變更：Cursor 雙模型池顯示、面板外觀改版（來源官方圖示、垂直堆疊的玻璃卡片、
+最後核對：2026-09-15；程式基準：`170d4cd`（v0.2.0 發布前的 main）。
+現有功能包含 Cursor 雙模型池顯示、面板外觀改版（來源官方圖示、垂直堆疊的玻璃卡片、
 最上層與滑鼠移入才變不透明）與帳號額度重置倒數及到期立即重查，
 詳見下方計量規則、桌面生命週期與來源文件。
 此文件供後續需求快速接續；環境與程式有變動時重新核對相關部分。
@@ -150,7 +150,7 @@ docker run --rm --mount "type=bind,source=$PWD,target=/src,readonly" -w /src gol
 docker run --rm --pull=always --mount "type=bind,source=$PWD,target=/src" -w /src golang:latest sh scripts/release.sh
 ```
 
-發行腳本先競態測試及 vet，再以 `CGO_ENABLED=0` 建置 Windows/Linux/macOS 的 amd64/arm64；Windows 額外產出 GUI 版，共八個執行檔。產物在 `dist/releases/`，含 `BUILDINFO.txt`、`SHA256SUMS`；`dist/` 被 Git 忽略。版本變數目前為 `0.1.0`。
+發行腳本先競態測試及 vet，再以 `CGO_ENABLED=0` 建置 Windows/Linux/macOS 的 amd64/arm64；Windows 額外產出 GUI 版，共八個執行檔。產物在 `dist/releases/`，含 `BUILDINFO.txt`、`SHA256SUMS`；`dist/` 被 Git 忽略。版本變數目前為 `0.2.0`。
 跨平台編譯不代表來源整合已實機驗證；沒有 macOS `.app`、簽章或公證流程。
 
 ## 已知事項與文件索引

@@ -10,16 +10,16 @@
 
 ## 下載
 
-最新版本 **v0.1.2**。認不得自己的機器是哪一種就看下面的對照表。
+最新版本 **v0.2.0**。認不得自己的機器是哪一種就看下面的對照表。
 
 | 作業系統 | 下載 |
 | --- | --- |
-| Windows（Intel / AMD） | [aiusage-v0.1.2-windows-amd64.tar.gz](https://github.com/mayes-art/ai-usage/releases/download/v0.1.2/aiusage-v0.1.2-windows-amd64.tar.gz) |
-| Windows（ARM，如 Surface Pro X） | [aiusage-v0.1.2-windows-arm64.tar.gz](https://github.com/mayes-art/ai-usage/releases/download/v0.1.2/aiusage-v0.1.2-windows-arm64.tar.gz) |
-| macOS（Apple Silicon，M1 以後） | [aiusage-v0.1.2-darwin-arm64.tar.gz](https://github.com/mayes-art/ai-usage/releases/download/v0.1.2/aiusage-v0.1.2-darwin-arm64.tar.gz) |
-| macOS（Intel） | [aiusage-v0.1.2-darwin-amd64.tar.gz](https://github.com/mayes-art/ai-usage/releases/download/v0.1.2/aiusage-v0.1.2-darwin-amd64.tar.gz) |
-| Linux（x64） | [aiusage-v0.1.2-linux-amd64.tar.gz](https://github.com/mayes-art/ai-usage/releases/download/v0.1.2/aiusage-v0.1.2-linux-amd64.tar.gz) |
-| Linux（ARM64） | [aiusage-v0.1.2-linux-arm64.tar.gz](https://github.com/mayes-art/ai-usage/releases/download/v0.1.2/aiusage-v0.1.2-linux-arm64.tar.gz) |
+| Windows（Intel / AMD） | [aiusage-v0.2.0-windows-amd64.tar.gz](https://github.com/mayes-art/ai-usage/releases/download/v0.2.0/aiusage-v0.2.0-windows-amd64.tar.gz) |
+| Windows（ARM，如 Surface Pro X） | [aiusage-v0.2.0-windows-arm64.tar.gz](https://github.com/mayes-art/ai-usage/releases/download/v0.2.0/aiusage-v0.2.0-windows-arm64.tar.gz) |
+| macOS（Apple Silicon，M1 以後） | [aiusage-v0.2.0-darwin-arm64.tar.gz](https://github.com/mayes-art/ai-usage/releases/download/v0.2.0/aiusage-v0.2.0-darwin-arm64.tar.gz) |
+| macOS（Intel） | [aiusage-v0.2.0-darwin-amd64.tar.gz](https://github.com/mayes-art/ai-usage/releases/download/v0.2.0/aiusage-v0.2.0-darwin-amd64.tar.gz) |
+| Linux（x64） | [aiusage-v0.2.0-linux-amd64.tar.gz](https://github.com/mayes-art/ai-usage/releases/download/v0.2.0/aiusage-v0.2.0-linux-amd64.tar.gz) |
+| Linux（ARM64） | [aiusage-v0.2.0-linux-arm64.tar.gz](https://github.com/mayes-art/ai-usage/releases/download/v0.2.0/aiusage-v0.2.0-linux-arm64.tar.gz) |
 
 其他版本與校驗碼在[發行頁](https://github.com/mayes-art/ai-usage/releases/latest)。
 `SHA256SUMS` 對應壓縮檔，`BINARY-SHA256SUMS` 對應解開後的執行檔。
