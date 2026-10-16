@@ -8,6 +8,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os/exec"
@@ -28,6 +29,13 @@ func readCodexRateLimits(timeout time.Duration) (*model.Reported, error) {
 	}
 	cmd := exec.CommandContext(ctx, exe, "app-server", "--stdio")
 	desktop.ConfigureBackgroundProcess(cmd)
+	return codexAppServerRateLimits(ctx, cmd, exe, timeout)
+}
+
+// errCodexAbsent marks a launcher that exited without output because no CLI was found.
+var errCodexAbsent = errors.New("Codex CLI not found")
+
+func codexAppServerRateLimits(ctx context.Context, cmd *exec.Cmd, exe string, timeout time.Duration) (*model.Reported, error) {
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, fmt.Errorf("Codex stdin: %w", err)
@@ -72,6 +80,9 @@ func readCodexRateLimits(timeout time.Duration) (*model.Reported, error) {
 			}
 			if err == io.EOF && stderr.Len() > 0 {
 				return nil, fmt.Errorf("Codex app-server stopped: %s", oneLine(stderr.String()))
+			}
+			if err == io.EOF {
+				return nil, errCodexAbsent
 			}
 			return nil, fmt.Errorf("read Codex app-server: %w", err)
 		}

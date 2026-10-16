@@ -7,5 +7,5 @@ import (
 )
 
 func InstalledProviders() map[string]bool {
-	return map[string]bool{model.ProviderClaude: true, model.ProviderCodex: true, model.ProviderCursor: true, model.ProviderAntigravity: true}
+	return map[string]bool{model.ProviderClaude: true, model.ProviderCodex: true, model.ProviderCursor: true, model.ProviderAntigravity: true, model.ProviderGemini: true}
 }

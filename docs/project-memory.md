@@ -1,6 +1,6 @@
 # aiusage 專案記憶
 
-最後核對：2026-10-16；本次核對範圍為 Claude 帳號額度即時查詢、備援與固定主視窗，以及 Antigravity CLI 1.3.6 用量報告備援。
+最後核對：2026-10-16；本次核對範圍為 Gemini 桌面版 cookie 解密、帳號額度查詢與舊設定排序遷移；另保留 Claude 帳號額度查詢與 Antigravity CLI 用量報告備援。
 現有功能包含 Cursor 雙模型池顯示、面板外觀改版（來源官方圖示、垂直堆疊的玻璃卡片、
 最上層與滑鼠移入才變不透明）與帳號額度重置倒數及到期立即重查，
 另已加入使用 Code 檔案式登入定期查詢 Claude 共享額度，保留 Desktop / statusLine 備援；
@@ -9,7 +9,7 @@
 
 ## 產品與使用方式
 
-aiusage 把 Claude、Codex、Cursor、Antigravity 的用量放在本機面板，顯示已使用比例、剩餘量、重置時間、來源狀態及詳細資訊，也提供終端報表與診斷。
+aiusage 把 Claude、Codex、Antigravity、Gemini、Cursor 的用量放在本機面板，顯示已使用比例、剩餘量、重置時間、來源狀態及詳細資訊，也提供終端報表與診斷。
 
 - Go module：`aiusage`，最低 Go 版本 1.22；無第三方 Go 套件。
 - 使用者偏好：程式碼不要放太多註解；必要說明精簡，其餘寫入文件。
@@ -57,19 +57,20 @@ aiusage 把 Claude、Codex、Cursor、Antigravity 的用量放在本機面板，
 - Config 使用深拷貝；更新先成功儲存才替換執行中設定，失敗保留原值。
 - `internal/architecture/dependencies_test.go` 約束依賴：model 僅標準庫，service 僅 model，controller 僅 model/view，view 僅 model。
 
-## 四種來源
+## 五種來源
 
 | 來源 | 現有資料路徑與主要行為 | 更新／平台限制 |
 | --- | --- | --- |
 | Claude | Code 檔案式登入查帳號共享額度 + Code 紀錄 + Desktop `plan-usage-history.json` + 選配 `claude-quota.json`，選最新可用快照 | 成功約 60 秒再查、單次逾時 5 秒；失敗退避並保留快照。`claude_org` 指定時停用即時查詢；不讀 macOS Keychain |
-| Codex | `codex app-server` 帳號額度與 session 紀錄備援，本機 token 另外統計；額度選時間較新的結果 | 最快 30 秒一次，即時查詢逾時 8 秒；需要 PATH 可找到且已登入的 CLI |
+| Codex | `codex app-server` 帳號額度與 session 紀錄備援，本機 token 另外統計；額度選時間較新的結果。主機失敗時改查執行中 WSL 的 Linux `codex` | 最快 30 秒一次，即時查詢逾時 8 秒；WSL 整輪最多 15 秒。忽略 `/mnt` 上的 Windows 捷徑 |
+| Antigravity | 查執行中的本機服務，失敗時執行 `agy -p /usage --output-format json`；主機仍失敗時改查 WSL 的 Linux `agy`。依模型群顯示配額，主列採最高使用比例；展開細節另列名稱含 Claude 的視窗 | 成功 60 秒、失敗 5 分鐘；服務自動偵測僅 Windows；agy 1.2.2 起本機服務要求外部取不到的 CSRF |
+| Gemini | 用桌面版 Chromium cookie 取得用量頁驗證資訊，再向同站固定 batchexecute 端點呼叫 `GetUsageInfo`；cookie 留在記憶體，拒絕轉址 | 登入讀取僅 Windows，處理 schema 24 的主機雜湊前綴。5 小時／週額度選最高使用比例，未知不估算。WSL 尚未做 |
 | Cursor | 唯讀使用 IDE、其次 CLI 登入，查固定 `api2.cursor.sh` HTTPS 用量端點；方案金額由 cents 換成 USD，不合併帳號或團隊支出 | 成功 60 秒，失敗 5 分鐘；IDE SQLite 登入讀取僅 Windows，其他平台使用 CLI |
-| Antigravity | 查執行中的本機服務，失敗時執行 `agy -p /usage --output-format json`；依模型群顯示配額，主列採最高使用比例，不把群組相加 | 成功 60 秒、失敗 5 分鐘；服務自動偵測僅 Windows；agy 1.2.2 起本機服務要求外部取不到的 CSRF，實際走用量報告；無手動上限 |
 
 「重新掃描」會重設來源快取及檔案位移，再收集，因此也能立即重試帳號查詢。
 Claude 主機登入路徑優先 `CLAUDE_CONFIG_DIR/.credentials.json`，否則 `~/.claude/.credentials.json`。
 Windows 主機登入不可用或 401 / 403 時，改試執行中的 WSL 發行版預設使用者登入；排除 Docker Desktop，
-名稱排序、最多 8 個。WSL 指令各限 2 秒，與 HTTP 共用 5 秒查詢預算；不讀 shell profile、不主動啟動已停止發行版。
+名稱排序、最多 8 個，並排除 `podman-machine`。WSL 指令不讀 shell profile、不主動啟動已停止發行版。Codex 與 Antigravity 也用同一套列舉，只接受 Linux 原生執行檔。
 主機與 WSL 帳號額度不相加；來源標籤標示實際環境，WSL 結果不被主機快照覆蓋。WSL 暫不掃 token 紀錄。
 限流及網路錯誤不切換帳號重試。WSL 登入或啟動後可手動重掃，不適用主機登入檔的即時變更偵測。
 Claude 的 `ProviderPolicy.ShowWhenReported` 允許有效回報通過主機安裝過濾，支援僅在 WSL 安裝的情況。
@@ -140,7 +141,7 @@ alpha 是不透明度不是透明度：0 全透明、255 全不透明。滑入�
 - 預設：隨機埠、每 3 秒掃描、80% 警戒、優先回報、保留 40 天。
 - 設定檔：Windows `%APPDATA%/aiusage/config.json`；其他平台 `$XDG_CONFIG_HOME/aiusage/config.json`，否則 `~/.config/aiusage/config.json`。
 - 磁碟手改設定需重啟；重掃不重新載入設定。面板儲存則立即生效。
-- 缺少的預設來源會補回；要停用請保留項目並設 `enabled: false`。舊 `gemini` 項目移除並補 Antigravity，不搬用其上限或紀錄路徑。
+- 缺少的預設來源會補回；要停用請保留項目並設 `enabled: false`。舊 Gemini CLI 項目移除，不搬用其上限或紀錄路徑；目前 Gemini 桌面版設定保留。載入時將 Gemini 移至 Cursor 正上方，其他來源相對順序及設定值保留。
 - 掃描 `.json` / `.jsonl` / `.ndjson`；每根目錄最多 4,000 個符合條件檔案、單檔最多 96 MiB。JSON 完整讀取；JSONL 每輪最多 24 MiB，只處理完整換行。
 - 通用掃描排除敏感檔名；保留期僅影響記憶體採計，不刪原始紀錄。
 - Claude Code 與 Cursor 憑證限專用讀取器唯讀使用、僅留在記憶體並拒絕轉址。Claude 僅 GET
@@ -187,7 +188,7 @@ docker run --rm --pull=always --mount "type=bind,source=$PWD,target=/src" -w /sr
 - [README](../README.md)：給使用者看的介紹、各系統下載與使用方式、面板說明。
 - [開發技術細節](development.md)：建置、發行、設定檔欄位、計量規則、資料邊界（原 README 內容）。
 - [架構說明](architecture.md)：分層與擴充契約。
-- [Claude](providers/claude.md)、[Cursor](providers/cursor.md)、[Antigravity](providers/antigravity.md)：來源細節；Codex 實作從 `internal/source/codex/` 閱讀。
+- [Claude](providers/claude.md)、[Cursor](providers/cursor.md)、[Antigravity](providers/antigravity.md)、[Gemini](providers/gemini.md)：來源細節；Codex 實作從 `internal/source/codex/` 閱讀。
 - [2026-09-14 檢視紀錄](review-2026-09-14.md)：該次發現及驗證範圍。
 - [2026-09-15 檢視紀錄](review-2026-09-15.md)：面板外觀改版與重置倒數的接手檢視、修正與驗證範圍。
 - [Cursor 雙模型池 QA](qa-cursor-model-pools.md)：自動測試、畫面及建置結果，以及登入後完成的 Claude CLI QA 與修正紀錄。

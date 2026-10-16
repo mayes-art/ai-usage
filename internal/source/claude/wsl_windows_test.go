@@ -5,6 +5,8 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"aiusage/internal/source/wsl"
 )
 
 func TestWSLBridgeSyntheticOnly(t *testing.T) {
@@ -13,12 +15,12 @@ func TestWSLBridgeSyntheticOnly(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	distros, err := listClaudeWSL(ctx)
+	distros, err := wsl.List(ctx)
 	if err != nil || len(distros) == 0 {
 		t.Fatalf("running WSL required: %v", err)
 	}
 	const script = `printf '%s' '{"claudeAiOauth":{"accessToken":"synthetic-wsl"}}'`
-	data, err := runClaudeWSL(ctx, claudeCredentialsMax, "--distribution", distros[0], "--exec", "sh", "-c", script)
+	data, err := wsl.Exec(ctx, distros[0], claudeCredentialsMax, script)
 	if err != nil {
 		t.Fatal(err)
 	}

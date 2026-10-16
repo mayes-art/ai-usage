@@ -16,6 +16,7 @@ import (
 
 	"aiusage/internal/config"
 	"aiusage/internal/model"
+	"aiusage/internal/source/wsl"
 )
 
 const (
@@ -90,7 +91,7 @@ func readClaudeUsage(timeout time.Duration) (*model.Reported, error) {
 	defer cancel()
 	return readClaudeEnvironments(ctx, &http.Client{Timeout: timeout}, func() (string, error) {
 		return readClaudeAccessToken(claudeCredentialsPath(), time.Now())
-	}, listClaudeWSL, readClaudeWSL)
+	}, wsl.List, readClaudeWSL)
 }
 
 func requestClaudeUsage(ctx context.Context, client *http.Client, token string, now func() time.Time) (*model.Reported, error) {

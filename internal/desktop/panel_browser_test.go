@@ -44,13 +44,15 @@ func TestPanelSizeGrowsDownNotSideways(t *testing.T) {
 // 236 × 595 為實測值（內容 551.1 加標題列，overflows 為 false）。
 // 改版面就要重新量；這個測試擋住無聲的回歸。
 func TestDefaultPanelFitsWithoutScrollbar(t *testing.T) {
-	const measuredContentHeight = 552 // 實測 551.1，進位
-	all := map[string]bool{"claude": true, "codex": true, "cursor": true, "antigravity": true}
+	const measuredContentHeight = 552 // 四張卡實測 551.1，進位
+	all := map[string]bool{"claude": true, "codex": true, "cursor": true, "antigravity": true, "gemini": true}
 	width, height := panelSize(all)
-	if width != 236 || height != 595 {
-		t.Fatalf("四個來源的面板尺寸已改變：%d × %d，請重新實測內容高度", width, height)
+	// 第五張卡沿用已實測的卡片高度與間距，視窗高度為 595 + 98 + 8。
+	if width != 236 || height != 701 {
+		t.Fatalf("五個來源的面板尺寸已改變：%d × %d，請重新實測內容高度", width, height)
 	}
-	if slack := height - panelWindowChrome - measuredContentHeight; slack < 0 {
+	content := measuredContentHeight + panelCardHeight + panelRowGap
+	if slack := height - panelWindowChrome - content; slack < 0 {
 		t.Fatalf("視窗比內容矮 %d px，預設狀態會出現捲軸", -slack)
 	}
 }

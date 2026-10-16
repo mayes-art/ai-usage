@@ -18,7 +18,11 @@ type Collector struct {
 }
 
 func New() *Collector {
-	return &Collector{logs: logs.New(), readLive: readCodexRateLimits}
+	return &Collector{logs: logs.New(), readLive: readCodexLive}
+}
+
+func (c *Collector) Policy() model.ProviderPolicy {
+	return model.ProviderPolicy{ShowWhenReported: true}
 }
 
 func (c *Collector) Reset() {

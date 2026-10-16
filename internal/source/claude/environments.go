@@ -1,33 +1,24 @@
 package claude
 
 import (
-	"bytes"
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"net/http"
-	"sort"
-	"strings"
 	"time"
-	"unicode/utf16"
 
 	"aiusage/internal/model"
+	"aiusage/internal/source/wsl"
 )
 
 const wslQuotaPrefix = "Claude Code WSL（"
 
-type wslOutput struct {
-	data  []byte
-	limit int
-}
-
-func (w *wslOutput) Write(p []byte) (int, error) {
-	if len(p) > w.limit-len(w.data) {
-		return 0, errors.New("WSL 輸出超過大小限制")
-	}
-	w.data = append(w.data, p...)
-	return len(p), nil
+func readClaudeWSL(ctx context.Context, distro string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	// 固定腳本、不載入 shell profile；憑證只經由受限 stdout 留在記憶體。
+	const script = `p="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.credentials.json"; test -f "$p" || exit 3; exec head -c 1048577 -- "$p"`
+	return wsl.Exec(ctx, distro, claudeCredentialsMax, script)
 }
 
 func readClaudeEnvironments(ctx context.Context, client *http.Client, host func() (string, error), list func(context.Context) ([]string, error), read func(context.Context, string) ([]byte, error)) (*model.Reported, error) {
@@ -78,29 +69,4 @@ func readClaudeEnvironments(ctx context.Context, client *http.Client, host func(
 		return nil, fmt.Errorf("主機 Claude 登入不可用；%w", lastErr)
 	}
 	return nil, hostErr
-}
-
-func parseWSLDistros(data []byte) []string {
-	if len(data) >= 2 && (bytes.IndexByte(data, 0) >= 0 || (data[0] == 0xff && data[1] == 0xfe)) {
-		words := make([]uint16, len(data)/2)
-		for i := range words {
-			words[i] = binary.LittleEndian.Uint16(data[i*2:])
-		}
-		data = []byte(string(utf16.Decode(words)))
-	}
-	seen := map[string]bool{}
-	var out []string
-	for _, line := range strings.Split(strings.TrimPrefix(string(data), "\ufeff"), "\n") {
-		name := strings.TrimSpace(line)
-		if name == "" || len(name) > 256 || strings.ContainsAny(name, "\x00/\\\r") || strings.HasPrefix(strings.ToLower(name), "docker-desktop") || seen[name] {
-			continue
-		}
-		seen[name] = true
-		out = append(out, name)
-	}
-	sort.Strings(out)
-	if len(out) > 8 {
-		out = out[:8]
-	}
-	return out
 }
