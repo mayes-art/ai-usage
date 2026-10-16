@@ -104,3 +104,38 @@ func (r Reported) Usable() bool {
 	}
 	return r.Used != nil && r.Limit != nil && *r.Limit > 0
 }
+
+// Expired reports whether a rolling window has certainly reset since the sample.
+func (w ReportedWindow) Expired(sampledAt, now time.Time) bool {
+	if w.WindowMinutes <= 0 {
+		return false
+	}
+	if w.ResetAt != nil {
+		return !w.ResetAt.After(now)
+	}
+	return now.Sub(sampledAt) >= time.Duration(w.WindowMinutes*float64(time.Minute))
+}
+
+// ActiveAt drops expired rolling windows. The primary value follows Windows[0],
+// so it is replaced by the next live window or cleared when none remain.
+func (r Reported) ActiveAt(now time.Time) Reported {
+	var active []ReportedWindow
+	for _, w := range r.Windows {
+		if !w.Expired(r.At, now) {
+			active = append(active, w)
+		}
+	}
+	if len(active) == len(r.Windows) {
+		return r
+	}
+	primaryExpired := r.Windows[0].Expired(r.At, now)
+	r.Windows = active
+	if primaryExpired {
+		r.PercentUsed, r.ResetAt = nil, nil
+		if len(active) > 0 {
+			percent := active[0].PercentUsed
+			r.PercentUsed, r.ResetAt = &percent, active[0].ResetAt
+		}
+	}
+	return r
+}

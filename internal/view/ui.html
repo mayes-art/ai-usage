@@ -624,8 +624,8 @@ function buildRow(p, now, keepEditor) {
     resetEl.title = '帳號額度重置倒數';
   } else {
     resetEl.classList.add('unknown');
-    resetEl.textContent = '重置未知';
-    resetEl.title = '來源未提供帳號額度重置時間';
+    resetEl.textContent = p.quota_issue ? '需登入' : '重置未知';
+    resetEl.title = p.quota_issue || '來源未提供帳號額度重置時間';
   }
 
   const pctEl = head.querySelector('.pct');
@@ -637,13 +637,14 @@ function buildRow(p, now, keepEditor) {
   } else if (hasLimit) {
     pctEl.className = 'pct ' + level;
     pctEl.innerHTML = fmtPct(p.percent) + '<span class="sign">%</span>';
-    pctEl.title = '用量 ÷ 總量';
+    pctEl.title = p.id === 'claude' ? '5 小時用量；7 天用量請展開細節' : '用量 ÷ 總量';
   } else {
     pctEl.className = 'pct none';
     // 保留 % 記號，讓這個位置一眼看得出是「百分比還算不出來」，
     // 而不是一條莫名其妙的橫線。
     pctEl.innerHTML = '—<span class="sign">%</span>';
-    pctEl.title = p.id === 'antigravity' ? '尚未取得 Antigravity 額度' : '尚未設定上限，算不出百分比';
+    pctEl.title = p.quota_issue || (p.id === 'claude' ? '尚無有效的 5 小時額度；7 天用量請展開細節' :
+      p.id === 'antigravity' ? '尚未取得 Antigravity 額度' : '尚未設定上限，算不出百分比');
   }
 
   const used = fmtNum(p.used, p.metric);
@@ -761,6 +762,7 @@ function buildRow(p, now, keepEditor) {
   if (p.limit_source === 'reported') bit('來源', escapeHtml(p.quota_source || '官方回報值'));
   if (p.quota_at) bit('額度更新', escapeHtml(new Date(p.quota_at * 1000).toLocaleString('zh-Hant', {hour12: false})));
   if (p.quota_stale) bit('資料較舊', '請檢查來源登入及更新狀態；超過 24 小時不再用於計算');
+  if (p.quota_issue) bit('帳號查詢', escapeHtml(p.quota_issue));
   if (bits.length) {
     meta.innerHTML = bits.join('');
     if (level === 'crit') meta.className = 'meta over';

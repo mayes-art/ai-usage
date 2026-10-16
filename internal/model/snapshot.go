@@ -26,6 +26,7 @@ type ProviderSnapshot struct {
 	QuotaSource string `json:"quota_source,omitempty"`
 	QuotaAt     *int64 `json:"quota_at,omitempty"`
 	QuotaStale  bool   `json:"quota_stale,omitempty"`
+	QuotaIssue  string `json:"quota_issue,omitempty"`
 	ID          string `json:"id"`
 	Name        string `json:"name"`
 	Status      string `json:"status"` // ok | idle | no_data | unavailable | manual | disabled
@@ -98,6 +99,8 @@ type ScanStats struct {
 	Skipped  int      `json:"skipped"`
 	Errors   []string `json:"errors,omitempty"`
 	RootsHit []string `json:"roots_hit,omitempty"`
+	// QuotaIssue is an account quota problem that needs user action, such as an expired login.
+	QuotaIssue string `json:"quota_issue,omitempty"`
 }
 
 // Collection is the result of collecting a provider's usage at one point in time.
@@ -112,6 +115,11 @@ type Collection struct {
 // ProviderPolicy describes presentation behavior without provider-specific logic
 // in the application service.
 type ProviderPolicy struct {
+	ShowWhenReported       bool
+	// DropExpiredWindows is only safe when reset times reliably mark the end of a rolling window.
+	DropExpiredWindows     bool
+	PrimaryWindowMinutes   float64
+	PrimaryWindowLabel     string
 	Name                   string
 	Note                   string
 	UnavailableDetail      string

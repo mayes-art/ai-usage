@@ -38,19 +38,41 @@ func parseAntigravityQuota(data []byte, now time.Time) (*model.Reported, error) 
 	if json.Unmarshal(data, &doc) != nil {
 		return nil, fmt.Errorf("Antigravity 額度摘要格式異常")
 	}
+	var groups []quotaGroup
+	for _, g := range doc.Response.Groups {
+		group := quotaGroup{Name: g.DisplayName}
+		for _, b := range g.Buckets {
+			group.Buckets = append(group.Buckets, quotaBucket{ID: b.BucketID, Name: b.DisplayName, Window: b.Window, Remaining: b.Remaining, Reset: b.Reset})
+		}
+		groups = append(groups, group)
+	}
+	return quotaFromGroups(groups, now)
+}
+
+type quotaGroup struct {
+	Name    string
+	Buckets []quotaBucket
+}
+
+type quotaBucket struct {
+	ID, Name, Window, Reset string
+	Remaining               *float64
+}
+
+func quotaFromGroups(groups []quotaGroup, now time.Time) (*model.Reported, error) {
 	r := &model.Reported{At: now, Metric: "quota"}
 	seen := map[string]bool{}
-	for _, group := range doc.Response.Groups {
+	for _, group := range groups {
 		for _, b := range group.Buckets {
 			if b.Remaining == nil || math.IsNaN(*b.Remaining) || math.IsInf(*b.Remaining, 0) || *b.Remaining < 0 || *b.Remaining > 1 {
 				continue
 			}
-			key := group.DisplayName + "|" + b.BucketID
-			if b.BucketID != "" && seen[key] {
+			key := group.Name + "|" + b.ID
+			if b.ID != "" && seen[key] {
 				continue
 			}
 			seen[key] = true
-			label := b.DisplayName
+			label := b.Name
 			mins := float64(0)
 			switch b.Window {
 			case "5h":
@@ -60,7 +82,7 @@ func parseAntigravityQuota(data []byte, now time.Time) (*model.Reported, error) 
 				label = "7 天"
 				mins = 10080
 			}
-			w := model.ReportedWindow{Label: group.DisplayName + " / " + label, WindowMinutes: mins, PercentUsed: (1 - *b.Remaining) * 100, HasPercent: true}
+			w := model.ReportedWindow{Label: group.Name + " / " + label, WindowMinutes: mins, PercentUsed: (1 - *b.Remaining) * 100, HasPercent: true}
 			if t, ok := record.ParseTimeString(b.Reset); ok {
 				w.ResetAt = &t
 			}
@@ -159,6 +181,20 @@ func antigravityRequest(ctx context.Context, e antigravityEndpoint, method strin
 }
 
 func readAntigravityQuota() (*model.Reported, error) {
+	r, err := readAntigravityService()
+	if err == nil {
+		return r, nil
+	}
+	exe, findErr := findAgyCommand()
+	if findErr != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), agyUsageTimeout)
+	defer cancel()
+	return readAgyUsage(ctx, exe)
+}
+
+func readAntigravityService() (*model.Reported, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	endpoints, err := discoverAntigravity(ctx)

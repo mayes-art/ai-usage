@@ -1,8 +1,9 @@
 # aiusage 專案記憶
 
-最後核對：2026-09-15；程式基準：`170d4cd`（v0.2.0 發布前的 main）。
+最後核對：2026-10-16；本次核對範圍為 Claude 帳號額度即時查詢、備援與固定主視窗，以及 Antigravity CLI 1.3.6 用量報告備援。
 現有功能包含 Cursor 雙模型池顯示、面板外觀改版（來源官方圖示、垂直堆疊的玻璃卡片、
 最上層與滑鼠移入才變不透明）與帳號額度重置倒數及到期立即重查，
+另已加入使用 Code 檔案式登入定期查詢 Claude 共享額度，保留 Desktop / statusLine 備援；
 詳見下方計量規則、桌面生命週期與來源文件。
 此文件供後續需求快速接續；環境與程式有變動時重新核對相關部分。
 
@@ -60,18 +61,36 @@ aiusage 把 Claude、Codex、Cursor、Antigravity 的用量放在本機面板，
 
 | 來源 | 現有資料路徑與主要行為 | 更新／平台限制 |
 | --- | --- | --- |
-| Claude | Code 紀錄 + Desktop `plan-usage-history.json` + 選配 `claude-quota.json`，選最新可用快照；可用 `claude_org` 選組織 | 每次掃描讀取；Desktop 用量頁或 statusLine 必須產生新樣本。Desktop 路徑探索涵蓋 Windows/macOS |
+| Claude | Code 檔案式登入查帳號共享額度 + Code 紀錄 + Desktop `plan-usage-history.json` + 選配 `claude-quota.json`，選最新可用快照 | 成功約 60 秒再查、單次逾時 5 秒；失敗退避並保留快照。`claude_org` 指定時停用即時查詢；不讀 macOS Keychain |
 | Codex | `codex app-server` 帳號額度與 session 紀錄備援，本機 token 另外統計；額度選時間較新的結果 | 最快 30 秒一次，即時查詢逾時 8 秒；需要 PATH 可找到且已登入的 CLI |
 | Cursor | 唯讀使用 IDE、其次 CLI 登入，查固定 `api2.cursor.sh` HTTPS 用量端點；方案金額由 cents 換成 USD，不合併帳號或團隊支出 | 成功 60 秒，失敗 5 分鐘；IDE SQLite 登入讀取僅 Windows，其他平台使用 CLI |
-| Antigravity | 查執行中的本機服務，依模型群顯示配額；主列採最高使用比例，不把群組相加 | 約 60 秒；服務自動偵測僅 Windows，需開啟並登入，無手動上限 |
+| Antigravity | 查執行中的本機服務，失敗時執行 `agy -p /usage --output-format json`；依模型群顯示配額，主列採最高使用比例，不把群組相加 | 成功 60 秒、失敗 5 分鐘；服務自動偵測僅 Windows；agy 1.2.2 起本機服務要求外部取不到的 CSRF，實際走用量報告；無手動上限 |
 
 「重新掃描」會重設來源快取及檔案位移，再收集，因此也能立即重試帳號查詢。
+Claude 主機登入路徑優先 `CLAUDE_CONFIG_DIR/.credentials.json`，否則 `~/.claude/.credentials.json`。
+Windows 主機登入不可用或 401 / 403 時，改試執行中的 WSL 發行版預設使用者登入；排除 Docker Desktop，
+名稱排序、最多 8 個。WSL 指令各限 2 秒，與 HTTP 共用 5 秒查詢預算；不讀 shell profile、不主動啟動已停止發行版。
+主機與 WSL 帳號額度不相加；來源標籤標示實際環境，WSL 結果不被主機快照覆蓋。WSL 暫不掃 token 紀錄。
+限流及網路錯誤不切換帳號重試。WSL 登入或啟動後可手動重掃，不適用主機登入檔的即時變更偵測。
+Claude 的 `ProviderPolicy.ShowWhenReported` 允許有效回報通過主機安裝過濾，支援僅在 WSL 安裝的情況。
+同帳號的 CLI / Desktop 額度共享，不相加；沒有可用檔案式登入時仍需 Desktop 用量頁或 statusLine
+產生新樣本。Desktop 路徑探索涵蓋 Windows/macOS。
+Claude 一般失敗從 60 秒起指數退避、上限 15 分鐘；429 至少 5 分鐘，429 / 503 均尊重更長的 `Retry-After`。
+重置到期可略過成功快取，但不繞過失敗退避；實際輪詢可能因掃描間隔或其他來源阻塞延後。
+查詢失敗保留上次成功結果，並與原有快照按樣本時間選較新者；未知不填 0%。
+Claude 登入錯誤使用 `QuotaIssue` 傳到畫面；缺少回報重置時間時主卡提示「需登入」。
+`claude auth login` 更新 Code 登入檔後，下一輪掃描會略過登入錯誤等待；依路徑、mtime、大小偵測，
+不繞過服務限流或一般連線錯誤退避。Desktop 登入不會更新 Code 登入，Desktop 歷史檔也不保證隨用量頁重整立即寫入。
 Windows/macOS 依安裝偵測顯示來源；Linux 不過濾。Windows 安裝偵測快取約一分鐘。
 
 ## 不可混淆的計量規則
 
 - `Reported.PercentUsed` 是 0–100 的百分比；`ProviderSnapshot.Percent` / `LimitWindow.Percent` 是比例（0.8 代表 80%，可超過 1）。
 - 帳號額度與本機 token 不等價；只有百分比時不能反推總 token 上限。未知應顯示 `—%`，不能當成 0%。
+- Claude 帳號額度主卡固定顯示 5 小時，7 天及模型週額度只放展開細節；5 小時缺少或已過期時不升用週額度。
+  `ProviderPolicy.PrimaryWindowMinutes` / `PrimaryWindowLabel` 指定主視窗，service 不依來源 ID 分支。
+  `Reported.ActiveAt` 排除已重置的視窗；沒有重置時間時以樣本時間加視窗長度判定過期。
+  過期過濾只在 `ProviderPolicy.DropExpiredWindows` 開啟時套用（目前只有 Claude），其他來源維持採用回報主值。
 - `prefer_reported_limits: true` 時，有效回報優先於手動值；關閉此全域偏好不會停止查詢，而且 Antigravity 將無額度可顯示。
 - 回報超過 24 小時不採用。帶來源標記的快照超過 45 分鐘顯示資料較舊；畫面更新時間不是來源樣本時間。
 - 目前 UI 的「改用手動上限」只存手動數值，沒有切換回報偏好。此為已知介面語意限制，不能當成切換已完成。
@@ -124,7 +143,10 @@ alpha 是不透明度不是透明度：0 全透明、255 全不透明。滑入�
 - 缺少的預設來源會補回；要停用請保留項目並設 `enabled: false`。舊 `gemini` 項目移除並補 Antigravity，不搬用其上限或紀錄路徑。
 - 掃描 `.json` / `.jsonl` / `.ndjson`；每根目錄最多 4,000 個符合條件檔案、單檔最多 96 MiB。JSON 完整讀取；JSONL 每輪最多 24 MiB，只處理完整換行。
 - 通用掃描排除敏感檔名；保留期僅影響記憶體採計，不刪原始紀錄。
-- Cursor 憑證限專用讀取器唯讀使用，拒絕轉址；Claude 不讀 Desktop cookies；Antigravity 查 loopback 服務。
+- Claude Code 與 Cursor 憑證限專用讀取器唯讀使用、僅留在記憶體並拒絕轉址。Claude 僅 GET
+  固定 `https://api.anthropic.com/api/oauth/usage`，不刷新、改寫或另存 token；不讀 Desktop cookies
+  或 macOS Keychain。此為內部用量介面，沒有公開穩定 API 契約。Antigravity 查 loopback 服務，
+  新版 CLI 改跑其非互動用量報告（暫存目錄、隱藏視窗、30 秒、輸出 1 MiB 上限）；不讀 agy 程序環境或 OAuth 憑證。
 - `panel.url` / `panel.log` 可能含可存取面板的網址，不能放入共享記憶或診斷附件。
 
 ## 開發與驗證
@@ -150,7 +172,7 @@ docker run --rm --mount "type=bind,source=$PWD,target=/src,readonly" -w /src gol
 docker run --rm --pull=always --mount "type=bind,source=$PWD,target=/src" -w /src golang:latest sh scripts/release.sh
 ```
 
-發行腳本先競態測試及 vet，再以 `CGO_ENABLED=0` 建置 Windows/Linux/macOS 的 amd64/arm64；Windows 額外產出 GUI 版，共八個執行檔。產物在 `dist/releases/`，含 `BUILDINFO.txt`、`SHA256SUMS`；`dist/` 被 Git 忽略。版本變數目前為 `0.2.0`。
+發行腳本先競態測試及 vet，再以 `CGO_ENABLED=0` 建置 Windows/Linux/macOS 的 amd64/arm64；Windows 額外產出 GUI 版，共八個執行檔。產物在 `dist/releases/`，含 `BUILDINFO.txt`、`SHA256SUMS`；`dist/` 被 Git 忽略。版本變數目前為 `0.3.0`（release-please 的 release PR 合併後才寫入 `version.go`）。`bump-patch-for-minor-pre-major` 開啟時一般 `feat` 只升 patch，要升 minor 需在 commit 加 `Release-As:`。
 跨平台編譯不代表來源整合已實機驗證；沒有 macOS `.app`、簽章或公證流程。
 
 ## 已知事項與文件索引

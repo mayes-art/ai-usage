@@ -25,7 +25,10 @@ func (s *Store) Snapshot() model.Snapshot {
 	}
 	for _, p := range s.cfg.Providers {
 		if s.installed != nil && !installed[p.ID] {
-			continue
+			r := s.reported[p.ID]
+			if !s.policy(p.ID).ShowWhenReported || r == nil || !r.Usable() || now.Sub(r.At) >= 24*time.Hour {
+				continue
+			}
 		}
 		snap.Providers = append(snap.Providers, s.providerSnapshot(p, now))
 	}
@@ -137,7 +140,38 @@ func (s *Store) providerSnapshot(p model.ProviderConfig, now time.Time) model.Pr
 			ps.QuotaAt = &t
 			ps.QuotaStale = now.Sub(r.At) > 45*time.Minute
 		}
-		if r := s.reported[p.ID]; r != nil && r.Usable() && now.Sub(r.At) < 24*time.Hour {
+		// 已確定重置過的視窗不能沿用舊百分比，否則過期快照會被當成目前用量。
+		var active model.Reported
+		if raw := s.reported[p.ID]; raw != nil {
+			active = *raw
+			if policy.DropExpiredWindows {
+				active = raw.ActiveAt(now)
+			}
+		}
+		var primary *model.ReportedWindow
+		otherWindows := active.Windows
+		if policy.PrimaryWindowMinutes > 0 {
+			active.PercentUsed, active.ResetAt, active.Used, active.Limit = nil, nil, nil, nil
+			otherWindows = nil
+			for i := range active.Windows {
+				w := &active.Windows[i]
+				if w.WindowMinutes == policy.PrimaryWindowMinutes {
+					primary = w
+					active.PercentUsed, active.ResetAt = &w.PercentUsed, w.ResetAt
+				} else {
+					otherWindows = append(otherWindows, *w)
+				}
+			}
+		} else if len(active.Windows) > 0 {
+			primary, otherWindows = &active.Windows[0], active.Windows[1:]
+		}
+		if r := &active; (r.Usable() || len(otherWindows) > 0) && now.Sub(r.At) < 24*time.Hour {
+			if policy.PrimaryWindowMinutes > 0 {
+				ps.WindowLabel = policy.PrimaryWindowLabel + "窗"
+				if primary == nil {
+					ps.Limit, ps.LimitSource = 0, "reported"
+				}
+			}
 			if r.Metric != "" {
 				ps.Metric = r.Metric
 			}
@@ -185,24 +219,23 @@ func (s *Store) providerSnapshot(p model.ProviderConfig, now time.Time) model.Pr
 				}
 				ps.UsageGroups = append(ps.UsageGroups, g)
 			}
-			if len(r.Windows) > 0 {
-				// 進度條畫最短的那個窗，其餘的原樣帶到細節列。
-				if l := r.Windows[0].Label; l != "" {
+			if primary != nil {
+				if l := primary.Label; l != "" {
 					ps.WindowLabel = l + "窗"
 				}
-				if r.Windows[0].ResetAt != nil {
-					winEnd = *r.Windows[0].ResetAt
-					t := r.Windows[0].ResetAt.Unix()
+				if primary.ResetAt != nil {
+					winEnd = *primary.ResetAt
+					t := primary.ResetAt.Unix()
 					ps.QuotaResetAt = &t
 				}
-				for _, w := range r.Windows[1:] {
-					lw := model.LimitWindow{Label: w.Label, Percent: w.PercentUsed / 100}
-					if w.ResetAt != nil {
-						t := w.ResetAt.Unix()
-						lw.ResetAt = &t
-					}
-					ps.OtherLimits = append(ps.OtherLimits, lw)
+			}
+			for _, w := range otherWindows {
+				lw := model.LimitWindow{Label: w.Label, Percent: w.PercentUsed / 100}
+				if w.ResetAt != nil {
+					t := w.ResetAt.Unix()
+					lw.ResetAt = &t
 				}
+				ps.OtherLimits = append(ps.OtherLimits, lw)
 			}
 		}
 	}
@@ -262,6 +295,7 @@ func (s *Store) providerSnapshot(p model.ProviderConfig, now time.Time) model.Pr
 		ps.LastEventAt = &t
 	}
 	if st := s.stats[p.ID]; st != nil {
+		ps.QuotaIssue = st.QuotaIssue
 		ps.Files = st.Files
 		ps.Errors = append([]string(nil), st.Errors...)
 		if policy.IncludeDiscoveredRoots {

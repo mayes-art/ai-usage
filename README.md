@@ -4,7 +4,7 @@
 一眼看到各家還剩多少額度、多久之後重置。
 
 單一執行檔，雙擊就跑。不需要安裝執行環境、不需要資料庫、不需要註冊任何服務。
-**所有資料都留在這台電腦，不會上傳。**
+**本機對話紀錄不會上傳；帳號額度透過供應商的用量服務查詢。**
 
 ## 畫面預覽
 
@@ -14,16 +14,16 @@
 
 ## 下載
 
-最新版本 **v0.2.0**。認不得自己的機器是哪一種就看下面的對照表。
+最新版本 **v0.3.0**。認不得自己的機器是哪一種就看下面的對照表。
 
 | 作業系統 | 下載 |
 | --- | --- |
-| Windows（Intel / AMD） | [aiusage-v0.2.0-windows-amd64.tar.gz](https://github.com/mayes-art/ai-usage/releases/download/v0.2.0/aiusage-v0.2.0-windows-amd64.tar.gz) |
-| Windows（ARM，如 Surface Pro X） | [aiusage-v0.2.0-windows-arm64.tar.gz](https://github.com/mayes-art/ai-usage/releases/download/v0.2.0/aiusage-v0.2.0-windows-arm64.tar.gz) |
-| macOS（Apple Silicon，M1 以後） | [aiusage-v0.2.0-darwin-arm64.tar.gz](https://github.com/mayes-art/ai-usage/releases/download/v0.2.0/aiusage-v0.2.0-darwin-arm64.tar.gz) |
-| macOS（Intel） | [aiusage-v0.2.0-darwin-amd64.tar.gz](https://github.com/mayes-art/ai-usage/releases/download/v0.2.0/aiusage-v0.2.0-darwin-amd64.tar.gz) |
-| Linux（x64） | [aiusage-v0.2.0-linux-amd64.tar.gz](https://github.com/mayes-art/ai-usage/releases/download/v0.2.0/aiusage-v0.2.0-linux-amd64.tar.gz) |
-| Linux（ARM64） | [aiusage-v0.2.0-linux-arm64.tar.gz](https://github.com/mayes-art/ai-usage/releases/download/v0.2.0/aiusage-v0.2.0-linux-arm64.tar.gz) |
+| Windows（Intel / AMD） | [aiusage-v0.3.0-windows-amd64.tar.gz](https://github.com/mayes-art/ai-usage/releases/download/v0.3.0/aiusage-v0.3.0-windows-amd64.tar.gz) |
+| Windows（ARM，如 Surface Pro X） | [aiusage-v0.3.0-windows-arm64.tar.gz](https://github.com/mayes-art/ai-usage/releases/download/v0.3.0/aiusage-v0.3.0-windows-arm64.tar.gz) |
+| macOS（Apple Silicon，M1 以後） | [aiusage-v0.3.0-darwin-arm64.tar.gz](https://github.com/mayes-art/ai-usage/releases/download/v0.3.0/aiusage-v0.3.0-darwin-arm64.tar.gz) |
+| macOS（Intel） | [aiusage-v0.3.0-darwin-amd64.tar.gz](https://github.com/mayes-art/ai-usage/releases/download/v0.3.0/aiusage-v0.3.0-darwin-amd64.tar.gz) |
+| Linux（x64） | [aiusage-v0.3.0-linux-amd64.tar.gz](https://github.com/mayes-art/ai-usage/releases/download/v0.3.0/aiusage-v0.3.0-linux-amd64.tar.gz) |
+| Linux（ARM64） | [aiusage-v0.3.0-linux-arm64.tar.gz](https://github.com/mayes-art/ai-usage/releases/download/v0.3.0/aiusage-v0.3.0-linux-arm64.tar.gz) |
 
 其他版本與校驗碼在[發行頁](https://github.com/mayes-art/ai-usage/releases/latest)。
 `SHA256SUMS` 對應壓縮檔，`BINARY-SHA256SUMS` 對應解開後的執行檔。
@@ -79,10 +79,10 @@ chmod +x ./linux-amd64/aiusage
 
 | 來源 | 讀得到什麼 | 需要什麼條件 |
 | --- | --- | --- |
-| **Claude** | Code 紀錄、Desktop 額度快照，以及選配的 CLI statusLine 額度 | Desktop 要開過用量頁面才會產生新快照。**重置倒數只有 statusLine 那條路帶得回來** |
+| **Claude** | 沿用 Code 登入查帳號共享額度與重置時間，另保留 Code 紀錄、Desktop 與 statusLine 快照 | 本機有檔案式 Code 登入時約每分鐘查詢，CLI / Desktop 同帳號均涵蓋；其餘情況使用快照備援 |
 | **Codex** | 透過已安裝的 `codex app-server` 查帳號額度，失敗時用 session 紀錄備援 | 要已登入、而且 `codex` 在 `PATH` 找得到 |
 | **Cursor** | 沿用既有登入，向 Cursor 的用量介面查個人方案額度 | 優先讀 IDE 登入，其次 CLI。**IDE 登入讀取只有 Windows 支援** |
-| **Antigravity** | 從執行中的本機服務讀各模型群額度 | 必須開著並已登入。**服務自動偵測只有 Windows 支援** |
+| **Antigravity** | 從執行中的本機服務讀各模型群額度；新版 CLI 改用 `agy` 內建的用量報告 | 必須已登入。**本機服務自動偵測只有 Windows 支援**；新版 CLI 需要 `agy` 找得到 |
 
 沒有帳號額度可讀的來源，可以自己填上限，面板就會用本機統計的用量去算百分比。
 
@@ -145,17 +145,38 @@ aiusage version
 
 ---
 
-## 讓 Claude 顯示重置倒數
+## 讓 Claude 用量持續更新
 
-Claude Desktop 的額度快照裡**只有百分比，沒有重置時間**，所以預設會顯示「重置未知」。
+Claude 主卡顯示 **5 小時**使用百分比；點開卡片可看 **7 天**百分比。
+5 小時資料缺少或已過期時顯示 `—%`，不會改用週用量；有效的 0% 仍顯示 0%。
 
-想要倒數的話，把 Claude CLI 的 statusLine 接到 aiusage。在 `.claude/settings.json` 加入：
+已登入 Claude Code，且登入資料存在 `~/.claude/.credentials.json` 時，面板會自動查詢
+該帳號的共享額度與重置時間；有設定 `CLAUDE_CONFIG_DIR` 則使用該目錄。
+CLI 和 Desktop 使用同一帳號時，都能反映在這份額度中，不需要一直開著 Desktop 用量頁面。
+成功後約每 60 秒再查，掃描間隔較長或其他來源查詢較慢時可能延後；按「重新掃描」可立即重試。
+
+若主卡顯示「需登入」，在終端執行 `claude auth login`，使用與 Desktop 相同的帳號。
+Desktop 已登入不代表 Code 登入仍有效；更新 Code 登入檔後，面板會在下一輪掃描自動重試。
+
+**Windows 版也支援 WSL 帳號額度備援**：主機登入不存在、過期或無查詢權限時，會嘗試執行中的
+WSL 發行版之預設使用者登入；詳情會標示 `Claude Code WSL（發行版）帳號額度`。
+主機有效登入優先，額度不相加。請先啟動 WSL 並在其中登入 Claude Code，再按面板「重新掃描」。
+這項支援讀取 WSL 的帳號額度；本機 token 紀錄仍只掃描原有主機路徑。
+
+這個查詢使用 Claude Code 的內部用量介面，可能受服務變動或限流影響。失敗時仍保留
+上次成功結果與可用快照，並逐步延長重試間隔。macOS Keychain 登入目前不讀取；
+未使用檔案式 Code 登入，或設定了 `claude_org` 時，仍使用 Desktop 用量頁面或 statusLine。
+Desktop 快照只有百分比，沒有重置時間。
+
+也可以把 Claude CLI 的 statusLine 接到 aiusage，提供另一份含重置時間的快照。
+在 `.claude/settings.json` 合併：
 
 ```json
 {"statusLine":{"type":"command","command":"C:/你的路徑/aiusage.exe claude-statusline"}}
 ```
 
-之後 Claude Code 每次更新狀態列，就會把額度資料交給 aiusage，倒數就會出現。
+之後 Claude Code 更新狀態列並提供額度欄位時，就會把資料交給 aiusage。
+有重置時間的樣本會顯示倒數；不同來源採時間較新的有效樣本。
 狀態列也會順便顯示 `Claude 42%` 這樣的用量。
 
 已經有自訂 statusLine 的話要整合進去，不要直接蓋掉。
@@ -169,20 +190,20 @@ Claude Desktop 的額度快照裡**只有百分比，沒有重置時間**，所�
 
 常見情況：
 
-- **Claude 沒有額度** —— 開一次 Claude Desktop 的用量頁面，或設定上面的 statusLine
+- **Claude 沒有額度** —— 確認 Claude Code 已登入，登入過期時先在 Code 重新登入再按「重新掃描」；沒有檔案式登入時，開 Desktop 用量頁面或設定上面的 statusLine
 - **Codex 沒有額度** —— 確認 `codex` 在 `PATH` 裡而且已經登入
 - **Cursor 沒有額度** —— 確認 IDE 或 CLI 是登入狀態；非 Windows 請用 CLI 登入
-- **Antigravity 沒有額度** —— 它必須開著並登入；而且服務自動偵測只有 Windows 有
+- **Antigravity 沒有額度** —— 它必須已登入；新版 CLI 請確認終端機能執行 `agy`，失敗後約 5 分鐘自動重試，或按重新掃描
 - **面板沒開起來** —— 從主控台或 `panel.log` 取得網址，自己貼到瀏覽器
 
 ---
 
 ## 隱私
 
-- 服務只綁在 `127.0.0.1`，不對外開放，也不會把任何資料送出這台電腦。
+- 面板服務只綁在 `127.0.0.1`，不對外開放；帳號額度查詢會連線各供應商的服務。
 - 頁面與資料介面需要啟動時產生的一次性 token 才能存取，避免本機其他網頁順手打這個埠。
-- 只讀取用量所需的欄位。**不讀對話內容，不儲存登入 token。**
-- Cursor 的登入資訊只由專用的唯讀讀取器使用。
+- 只採計用量所需的欄位，**不保存或上傳對話內容，也不另存登入 token。**
+- Claude Code 與 Cursor 的登入資訊只由專用讀取器唯讀取得，在記憶體中用於固定 HTTPS 用量端點，拒絕轉址；不讀 Claude Desktop cookies。
 - `panel.url` 與 `panel.log` 可能含有能開啟面板的網址，分享診斷資料時請避開這兩個檔案。
 
 ---

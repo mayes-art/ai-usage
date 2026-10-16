@@ -7,14 +7,16 @@
 
 | 來源 | 資料取得方式 | 使用條件與限制 |
 | --- | --- | --- |
-| Claude CLI / Desktop | 讀取 Code 紀錄、Desktop 額度歷史，以及選配的 CLI statusLine 額度快照 | Desktop 必須更新用量頁面才會產生新快照；本機 token 不包含完整 Desktop 聊天用量 |
+| Claude CLI / Desktop | 使用既有 Code 檔案式登入查共享額度，並讀取 Code 紀錄、Desktop 額度歷史及選配 statusLine 快照 | 即時查詢不讀 macOS Keychain；指定 `claude_org` 時使用原有快照來源；本機 token 不包含完整 Desktop 聊天用量 |
 | Codex CLI | 優先透過已安裝的 `codex app-server` 查詢帳號額度；失敗時使用 session 紀錄中的回報值 | 即時查詢需要已登入、可在 `PATH` 找到的 Codex CLI；本機 token 另由紀錄統計 |
 | Cursor IDE / CLI | 使用既有登入資訊，向 Cursor HTTPS 用量介面查詢個人方案額度 | 優先 IDE，再嘗試 CLI；金額以 USD 顯示，無可用登入時可手動填寫 |
-| Antigravity CLI / Desktop | 從執行中的本機服務讀取各模型群額度 | 必須開啟並登入；主百分比採使用比例最高的限制，各模型群不相加 |
+| Antigravity CLI / Desktop | 從執行中的本機服務讀取各模型群額度；新版 CLI（1.2.2 起）本機服務需 CSRF 時，改用 `agy -p /usage --output-format json` | 必須登入；主百分比採使用比例最高的限制，各模型群不相加 |
 
 Windows 提供上述來源的整合。macOS / Linux 可建置主程式，但 **Cursor IDE 登入讀取與
 Antigravity 本機服務自動偵測目前僅支援 Windows**；其他平台的 Cursor 請使用 CLI 登入。
-Claude Desktop 額度檔探索涵蓋 Windows 與 macOS。
+Claude Desktop 額度檔探索涵蓋 Windows 與 macOS。Claude 帳號查詢使用
+`CLAUDE_CONFIG_DIR/.credentials.json`，未設定環境變數時使用 `~/.claude/.credentials.json`；
+不讀 macOS Keychain，僅有 Keychain 登入時仍由 Desktop / statusLine 提供額度。
 
 Windows / macOS 會依安裝偵測結果顯示來源，只有殘留紀錄資料夾不一定會出現在面板上。
 Linux 目前不做安裝過濾。舊設定中的 `gemini` 會在載入時移除，並補上 `antigravity`；
@@ -165,7 +167,8 @@ Windows 開機自動啟動：`Win+R` → `shell:startup`，放入 `aiusage-panel
   只表示一筆紀錄即將離開統計範圍，不表示帳號額度全部重置。
 - **重置倒數**：來源名稱旁的倒數每秒更新，只採用帳號回報的重置時間；
   來源沒有提供時顯示「重置未知」，不會拿本機滾動視窗的時間充數。
-  倒數歸零後面板會立即重查一次該來源的帳號額度，取得新額度前顯示「等待更新」。
+  倒數歸零後面板會立即請求重查一次該來源的帳號額度，取得新額度前顯示「等待更新」。
+  Claude 的到期重查會略過成功快取，但不繞過失敗退避。
 - **警戒與狀態**：低於警戒線使用來源色，達警戒線轉黃，達 100% 轉紅；
   各來源以自家圖示標示，沒有可用資料時轉為淡色。速率依最近 15 分鐘的本機事件估算。
 
@@ -174,11 +177,27 @@ Windows 開機自動啟動：`Win+R` → `shell:startup`，放入 `aiusage-panel
 | 來源 | 額度更新節奏 |
 | --- | --- |
 | Codex | 最快每 30 秒查詢一次；失敗時使用備援，「重新掃描」可立即重試 |
-| Claude | 隨掃描讀取本機快照；新資料取決於 Desktop 或 statusLine 是否更新 |
+| Claude | 成功後約 60 秒再查；一般失敗從 60 秒指數退避至最多 15 分鐘，429 至少等 5 分鐘，429 / 503 均尊重較長 `Retry-After`；本機快照每輪讀取，「重新掃描」可立即重試 |
 | Cursor | 成功後約 60 秒再查；失敗後 5 分鐘再試，「重新掃描」可立即重試 |
 | Antigravity | 約每 60 秒讀取一次；「重新掃描」可立即重試 |
 
-Claude 顯示額度來源與快照樣本時間；Cursor、Antigravity 顯示來源與查詢取得時間。
+Claude 每次帳號查詢逾時為 5 秒；實際再次查詢時間可能因掃描間隔或其他來源阻塞而延後。
+Claude 透過 `ProviderPolicy.PrimaryWindowMinutes: 300` 固定主卡為 5 小時；週額度保留在
+`OtherLimits` 與展開細節。缺少有效 5 小時視窗時不採用週百分比或週重置倒數。
+設定 `ProviderPolicy.DropExpiredWindows` 的來源（目前只有 Claude）先以 `Reported.ActiveAt` 排除已過期視窗，
+再依來源 policy 選取主視窗，不在 service 加來源 ID 分支。其他來源不套用過期過濾，
+維持改動前採用回報主值的行為。
+Windows 額度查詢優先主機，登入不可用或 401 / 403 時才探查 WSL 預設使用者的 Claude 登入。
+`wsl_windows.go` 使用隱藏背景程序、固定腳本、有界 stdout 與 timeout；非 Windows 不探索 WSL。
+只列執行中的發行版，排除 Docker Desktop，排序後最多 8 個；額度依第一個成功來源採用，不相加。
+選中 WSL 時不採用主機額度快照覆蓋它；原有 token 掃描仍在主機。WSL 登入恢復可用重掃立即重試。
+`ProviderPolicy.ShowWhenReported` 讓有有效遠端環境回報的來源可通過主機安裝過濾。
+即時查詢失敗仍保留上次成功的帳號快照，並與 Desktop / statusLine 依時間選較新的有效資料，
+不將失敗或缺少欄位當成已用 0%。
+Claude 登入錯誤透過 `ScanStats.QuotaIssue` 傳到 `ProviderSnapshot.QuotaIssue`，在詳細資訊顯示，
+無回報重置時間時主卡顯示「需登入」。使用 `claude auth login` 更新登入後，Collector 以
+登入檔路徑、mtime、大小偵測變更，在下一輪掃描略過登入錯誤退避；不略過服務限流或連線錯誤退避。
+Claude 顯示額度來源與樣本／查詢取得時間；Cursor、Antigravity 顯示來源與查詢取得時間。
 上述來源超過 45 分鐘沒有更新時會提示資料較舊。
 帳號回報值超過 24 小時後不再採用；本機統計或手動設定仍可能顯示。
 面板的「更新於」是畫面快照時間，不代表所有來源剛剛完成查詢。
@@ -246,7 +265,7 @@ Cursor 手動模式需同時填入「已用」與「上限」；預設手動單�
 | `window_kind` | `rolling`、`day`、`week`、`month`；日／週／月依本機時區，週一為一週起點 |
 | `window_seconds` | 本機滾動視窗秒數，預設 18000（5 小時）；不會更改官方計量視窗 |
 | `limit` | 自訂上限；`0` 表示未設定，不妨礙使用官方回報百分比 |
-| `claude_org` | 選用，指定 Claude Desktop 額度快照的組織；未設時使用最新樣本 |
+| `claude_org` | 選用，指定 Claude Desktop 額度快照的組織；設定後停用 Code 登入的即時查詢，避免混入其他組織，原有快照來源維持 |
 
 設定資料夾也可能包含 `panel.log`（啟動與錯誤訊息）、`panel.url`（既有面板網址）、
 `panel-browser/`（專用瀏覽器設定），以及使用 statusLine 功能後的 `claude-quota.json`。
@@ -258,12 +277,15 @@ Cursor 手動模式需同時填入「已用」與「上限」；預設手動單�
 - **來源整列不見**：先確認工具的安裝或 CLI 路徑可被偵測；Windows 安裝偵測快取約一分鐘。
 - **Codex 即時額度失敗**：確認 CLI 已登入且在 `PATH` 中；有本機 session 時仍可使用備援。
   「重新掃描」可清除輪詢等待並立即重試。
-- **Claude 沒有額度或資料過舊**：開啟 Desktop 用量頁面，或依來源文件設定 statusLine。
-  只有 Code token 紀錄時，仍可能需要自行設定上限。
+- **Claude 沒有額度或資料過舊**：確認 Code 已登入且有檔案式登入資料；401 / 403 或登入過期時，
+  先在 Code 重新登入再按「重新掃描」。沒有可用 Code 登入、使用 macOS Keychain，或設定
+  `claude_org` 時，開啟 Desktop 用量頁面或依來源文件設定 statusLine。
+  429 會延後重試；只有 Code token 紀錄時，仍可能需要自行設定上限。
 - **Cursor 無法查詢**：確認 IDE / CLI 使用帳號登入；API key 模式無法當作方案登入。
   401 / 403 請重新登入；IDE 與 CLI 登入不同帳號時，依面板來源標籤確認顯示哪個帳號。
 - **Antigravity 沒有資料**：確認在 Windows 上開啟並登入 CLI 或 Desktop，然後重新掃描。
-  本機服務介面若隨版本改變，也可能暫時無法取得額度。
+  新版 CLI 需要 `agy` 在 `PATH` 或預設安裝位置，並能在終端機執行 `agy -p /usage --output-format json`。
+  失敗後 5 分鐘才自動重試，重新掃描可立即重試。本機服務介面若隨版本改變，也可能暫時無法取得額度。
 - **本機紀錄未命中**：確認 `roots`。通用掃描只接受 `.json`、`.jsonl`、`.ndjson`，
   每個根目錄最多探索 4,000 個符合條件的檔案，跳過超過 96 MiB 的檔案及敏感檔名。
   `.json` 會在單檔大小上限內完整讀取；無效 JSON 會回報錯誤。
@@ -273,15 +295,19 @@ Cursor 手動模式需同時填入「已用」與「上限」；預設手動單�
 
 本工具不設中央資料庫，也不將本機對話紀錄上傳至自建服務；**它並非完全離線工具**。
 
-- Claude 整合讀取本機 Code 紀錄與額度快照，不讀 Desktop cookies 或登入憑證。
+- Claude 整合讀取本機 Code 紀錄與額度快照，並以專用讀取器唯讀取得 Code 的檔案式
+  access token，在記憶體中僅用於固定 `https://api.anthropic.com/api/oauth/usage` 的 GET 查詢，
+  拒絕轉址，不刷新、改寫或另存登入 token；不讀 Desktop cookies 或 macOS Keychain。
+  此為 Claude Code 使用的內部用量介面，沒有公開穩定 API 契約，可能隨服務變更而失效。
 - Codex 即時額度透過既有 CLI 的帳號介面查詢，可能由 CLI 連線官方服務。
 - Cursor 專用讀取器會唯讀取得 IDE / CLI 的 access token，僅用於固定的
   `https://api2.cursor.sh` 用量端點，拒絕 HTTP 轉址，不修改登入資料或另存憑證。
-- Antigravity 整合僅查詢本機 loopback 服務；必要時使用該程序提供的 CSRF 驗證值，
-  不讀 Google OAuth 憑證，也不直接向雲端送出查詢。
+- Antigravity 整合先查詢本機 loopback 服務；必要時使用該程序命令列提供的 CSRF 驗證值。
+  新版 CLI 不公開 CSRF 值，因此改執行 CLI 自己的非互動用量報告，由 CLI 連線官方服務。
+  本工具不讀 Google OAuth 憑證或 agy 程序環境，也不直接向雲端送出查詢。
 - 通用紀錄掃描會跳過名稱含 `oauth`、`credential`、`auth.json`、`token.json`、
   `secret`、`cookie`、`password`、`.env`、`settings.json` 等字樣的檔案。
-  Cursor 的專用登入讀取不屬於這個通用掃描流程。
+  Claude Code 與 Cursor 的專用登入讀取不屬於這個通用掃描流程。
 - 面板只監聽 `127.0.0.1`，頁面與資料 API 需要啟動時產生的隨機 token 或對應 cookie。
   `panel.url` 與 `panel.log` 可能含可存取面板的網址，分享診斷時請排除這些網址。
 - `doctor` 顯示路徑、欄位名稱、統計與錯誤，不輸出對話內容；路徑可能包含本機使用者名稱。

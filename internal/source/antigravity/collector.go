@@ -35,6 +35,8 @@ func (c *Collector) Collect(p model.ProviderConfig, _ time.Time, _ bool) model.C
 	c.next = time.Now().Add(time.Minute)
 	out := model.Collection{Reported: c.cached.Reported, Diagnosis: model.Diagnosis{Provider: p.ID}}
 	if err != nil {
+		// Failed CLI reports may retry sign-in, so avoid repeating them every minute.
+		c.next = time.Now().Add(5 * time.Minute)
 		out.Stats.Errors = []string{err.Error()}
 	} else {
 		out.Reported = r
