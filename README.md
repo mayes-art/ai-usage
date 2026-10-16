@@ -1,6 +1,6 @@
 # aiusage
 
-把 **Claude、Codex、Cursor、Antigravity** 的用量集中在一個本機小面板上，
+把 **Claude、Codex、Antigravity、Gemini、Cursor** 的用量集中在一個本機小面板上，
 一眼看到各家還剩多少額度、多久之後重置。
 
 單一執行檔，雙擊就跑。不需要安裝執行環境、不需要資料庫、不需要註冊任何服務。
@@ -80,9 +80,10 @@ chmod +x ./linux-amd64/aiusage
 | 來源 | 讀得到什麼 | 需要什麼條件 |
 | --- | --- | --- |
 | **Claude** | 沿用 Code 登入查帳號共享額度與重置時間，另保留 Code 紀錄、Desktop 與 statusLine 快照 | 本機有檔案式 Code 登入時約每分鐘查詢，CLI / Desktop 同帳號均涵蓋；其餘情況使用快照備援 |
-| **Codex** | 透過已安裝的 `codex app-server` 查帳號額度，失敗時用 session 紀錄備援 | 要已登入、而且 `codex` 在 `PATH` 找得到 |
+| **Codex** | 透過 `codex app-server` 查帳號額度，失敗時改查執行中的 WSL，再以 session 紀錄備援 | 主機或 WSL 的 Linux `codex` 需已登入；WSL 不掃描 token 紀錄 |
+| **Antigravity** | 從執行中的本機服務讀各模型群額度；新版 CLI 改用 `agy` 內建的用量報告。展開後可看 Claude 模型 | 必須已登入。主機失敗時改查 WSL 裡的 Linux `agy` |
+| **Gemini** | 用 Gemini 桌面版的登入狀態查詢帳號額度 | 先登入桌面版，並確認「設定 → 用量限制」可用。**登入讀取只有 Windows 支援**。卡片排在 Cursor 上面，舊設定也會調整 |
 | **Cursor** | 沿用既有登入，向 Cursor 的用量介面查個人方案額度 | 優先讀 IDE 登入，其次 CLI。**IDE 登入讀取只有 Windows 支援** |
-| **Antigravity** | 從執行中的本機服務讀各模型群額度；新版 CLI 改用 `agy` 內建的用量報告 | 必須已登入。**本機服務自動偵測只有 Windows 支援**；新版 CLI 需要 `agy` 找得到 |
 
 沒有帳號額度可讀的來源，可以自己填上限，面板就會用本機統計的用量去算百分比。
 

@@ -37,6 +37,11 @@ func DefaultConfig() *model.Config {
 				Note: "讀取執行中 Antigravity 的模型群額度；請保持 CLI 或 Desktop 開啟並登入。",
 			},
 			{
+				ID: model.ProviderGemini, Name: "Gemini 桌面版", Enabled: true,
+				Metric: "quota", WindowKind: "rolling", WindowSeconds: 5 * 3600,
+				Note: "讀取本機 Gemini 桌面版的登入狀態，查詢 gemini.google.com 的帳號額度。",
+			},
+			{
 				ID: model.ProviderCursor, Name: "Cursor", Enabled: true,
 				Roots:      []string{filepath.Join(home, ".cursor")},
 				Metric:     "requests",
@@ -133,6 +138,7 @@ func LoadConfig() (*model.Config, error) {
 			cfg.Providers = append(cfg.Providers, dp)
 		}
 	}
+	placeGeminiBeforeCursor(&cfg)
 	for i := range cfg.Providers {
 		p := &cfg.Providers[i]
 		if p.Metric == "" {
@@ -153,13 +159,33 @@ func LoadConfig() (*model.Config, error) {
 	return &cfg, nil
 }
 
-// Remove the old Gemini row without transferring its API-key limits or roots.
+func placeGeminiBeforeCursor(cfg *model.Config) {
+	gemini, cursor := -1, -1
+	for i, p := range cfg.Providers {
+		switch p.ID {
+		case model.ProviderGemini:
+			gemini = i
+		case model.ProviderCursor:
+			cursor = i
+		}
+	}
+	if cursor < 0 || gemini < cursor {
+		return
+	}
+	p := cfg.Providers[gemini]
+	copy(cfg.Providers[cursor+1:gemini+1], cfg.Providers[cursor:gemini])
+	cfg.Providers[cursor] = p
+}
+
+// Drop a legacy Gemini CLI row (API-key limit or log roots) without copying it
+// onto the desktop quota provider. A current Gemini row is kept, including enabled:false.
 func migrateAntigravity(cfg *model.Config) {
 	providers := cfg.Providers[:0]
 	for _, p := range cfg.Providers {
-		if p.ID != model.ProviderGemini {
-			providers = append(providers, p)
+		if p.ID == model.ProviderGemini && (len(p.Roots) > 0 || (p.Limit > 0 && p.Metric != "quota")) {
+			continue
 		}
+		providers = append(providers, p)
 	}
 	cfg.Providers = providers
 }

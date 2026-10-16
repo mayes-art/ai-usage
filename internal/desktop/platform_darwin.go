@@ -48,7 +48,7 @@ func openMacPanel(url string) bool {
 
 func InstalledProviders() map[string]bool {
 	found := map[string]bool{}
-	names := map[string][]string{model.ProviderCodex: {"codex"}, model.ProviderClaude: {"claude"}, model.ProviderCursor: {"cursor", "cursor-agent", "agent"}, model.ProviderAntigravity: {"agy", "antigravity"}}
+	names := map[string][]string{model.ProviderCodex: {"codex"}, model.ProviderClaude: {"claude"}, model.ProviderCursor: {"cursor", "cursor-agent", "agent"}, model.ProviderAntigravity: {"agy", "antigravity"}, model.ProviderGemini: {"gemini"}}
 	for id, commands := range names {
 		for _, name := range commands {
 			if _, err := exec.LookPath(name); err == nil {
@@ -56,7 +56,7 @@ func InstalledProviders() map[string]bool {
 			}
 		}
 	}
-	for id, app := range map[string]string{model.ProviderCodex: "Codex.app", model.ProviderClaude: "Claude.app", model.ProviderCursor: "Cursor.app", model.ProviderAntigravity: "Antigravity.app"} {
+	for id, app := range map[string]string{model.ProviderCodex: "Codex.app", model.ProviderClaude: "Claude.app", model.ProviderCursor: "Cursor.app", model.ProviderAntigravity: "Antigravity.app", model.ProviderGemini: "Gemini.app"} {
 		for _, root := range []string{"/Applications", filepath.Join(config.UserHome(), "Applications")} {
 			if st, err := os.Stat(filepath.Join(root, app)); err == nil && st.IsDir() {
 				found[id] = true

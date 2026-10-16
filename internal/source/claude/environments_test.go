@@ -2,28 +2,11 @@ package claude
 
 import (
 	"context"
-	"encoding/binary"
 	"errors"
 	"net/http"
-	"reflect"
 	"strings"
 	"testing"
-	"unicode/utf16"
 )
-
-func TestParseWSLDistros(t *testing.T) {
-	input := "Ubuntu\r\ndocker-desktop\r\nDebian\r\nUbuntu\r\n"
-	words := utf16.Encode([]rune("\ufeff" + input))
-	wide := make([]byte, len(words)*2)
-	for i, word := range words {
-		binary.LittleEndian.PutUint16(wide[2*i:], word)
-	}
-	for _, data := range [][]byte{[]byte(input), wide} {
-		if got := parseWSLDistros(data); !reflect.DeepEqual(got, []string{"Debian", "Ubuntu"}) {
-			t.Fatalf("invalid WSL names: %q", got)
-		}
-	}
-}
 
 func TestClaudeHostAndWSLFallback(t *testing.T) {
 	for _, tc := range []struct {
@@ -88,14 +71,4 @@ func TestWSLFailuresDoNotExposeProcessOutput(t *testing.T) {
 	_, err := readClaudeEnvironments(context.Background(), &http.Client{}, func() (string, error) { return "", claudeAuthError("host expired") },
 		func(context.Context) ([]string, error) { return nil, errors.New("synthetic-private-process-error") }, nil)
 	assertClaudeErrorSanitized(t, err, "synthetic-private-process-error")
-}
-
-func TestWSLOutputBound(t *testing.T) {
-	w := &wslOutput{limit: 4}
-	if _, err := w.Write([]byte("1234")); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := w.Write([]byte("sensitive")); err == nil || string(w.data) != "1234" {
-		t.Fatal("unbounded output")
-	}
 }

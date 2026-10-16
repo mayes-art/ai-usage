@@ -8,9 +8,10 @@
 | 來源 | 資料取得方式 | 使用條件與限制 |
 | --- | --- | --- |
 | Claude CLI / Desktop | 使用既有 Code 檔案式登入查共享額度，並讀取 Code 紀錄、Desktop 額度歷史及選配 statusLine 快照 | 即時查詢不讀 macOS Keychain；指定 `claude_org` 時使用原有快照來源；本機 token 不包含完整 Desktop 聊天用量 |
-| Codex CLI | 優先透過已安裝的 `codex app-server` 查詢帳號額度；失敗時使用 session 紀錄中的回報值 | 即時查詢需要已登入、可在 `PATH` 找到的 Codex CLI；本機 token 另由紀錄統計 |
+| Codex CLI | 優先透過 `codex app-server` 查詢帳號額度；主機失敗時查執行中 WSL 的 Linux `codex`，另保留 session 回報值備援 | CLI 需已登入；主機與 WSL 額度不相加。本機 token 另由主機紀錄統計，不掃描 WSL token 紀錄 |
 | Cursor IDE / CLI | 使用既有登入資訊，向 Cursor HTTPS 用量介面查詢個人方案額度 | 優先 IDE，再嘗試 CLI；金額以 USD 顯示，無可用登入時可手動填寫 |
-| Antigravity CLI / Desktop | 從執行中的本機服務讀取各模型群額度；新版 CLI（1.2.2 起）本機服務需 CSRF 時，改用 `agy -p /usage --output-format json` | 必須登入；主百分比採使用比例最高的限制，各模型群不相加 |
+| Antigravity CLI / Desktop | 從執行中的本機服務讀取各模型群額度；新版 CLI（1.2.2 起）本機服務需 CSRF 時，改用 `agy -p /usage --output-format json`；主機失敗再查 WSL 的 Linux `agy` | 必須登入；主百分比採使用比例最高的限制。展開細節另列 Claude 模型 |
+| Gemini 桌面版 | 讀取桌面版 Chromium cookie，取得用量頁驗證資訊後向同站固定 RPC 端點查詢 `GetUsageInfo` | 登入讀取僅 Windows；cookie 值不落盤，拒絕轉址。卡片在 Cursor 上面，舊設定也會調整。WSL 尚未做 |
 
 Windows 提供上述來源的整合。macOS / Linux 可建置主程式，但 **Cursor IDE 登入讀取與
 Antigravity 本機服務自動偵測目前僅支援 Windows**；其他平台的 Cursor 請使用 CLI 登入。
@@ -19,14 +20,16 @@ Claude Desktop 額度檔探索涵蓋 Windows 與 macOS。Claude 帳號查詢使�
 不讀 macOS Keychain，僅有 Keychain 登入時仍由 Desktop / statusLine 提供額度。
 
 Windows / macOS 會依安裝偵測結果顯示來源，只有殘留紀錄資料夾不一定會出現在面板上。
-Linux 目前不做安裝過濾。舊設定中的 `gemini` 會在載入時移除，並補上 `antigravity`；
-不沿用 Gemini 的每日限制或紀錄路徑，也不會刪除 Gemini 本身或其紀錄。
+Linux 目前不做安裝過濾。舊設定中的 Gemini CLI 項目（含紀錄路徑或非 quota 手動上限）會在載入時移除，
+不沿用每日限制或紀錄路徑；新版 Gemini 桌面版設定保留，包括停用狀態。
+缺少的預設來源會補回，再將 Gemini 移到 Cursor 正上方；不會刪除來源程式或其紀錄。
 
 各來源的細節：
 
 - [Claude 用量來源與 statusLine 設定](providers/claude.md)
 - [Cursor 登入來源、計量與重試規則](providers/cursor.md)
 - [Antigravity 模型群額度與本機服務](providers/antigravity.md)
+- [Gemini 桌面版帳號額度](providers/gemini.md)
 
 ## 發行流程
 
@@ -289,6 +292,9 @@ Cursor 手動模式需同時填入「已用」與「上限」；預設手動單�
   429 會延後重試；只有 Code token 紀錄時，仍可能需要自行設定上限。
 - **Cursor 無法查詢**：確認 IDE / CLI 使用帳號登入；API key 模式無法當作方案登入。
   401 / 403 請重新登入；IDE 與 CLI 登入不同帳號時，依面板來源標籤確認顯示哪個帳號。
+- **Gemini 無法查詢**：確認桌面版已登入，且帳號可開啟「設定 → 用量限制」。連線、逾時、
+  登入與額度格式錯誤會分別顯示；若登入資料被獨占，先關閉 Gemini 桌面版再重新掃描。
+  成功每分鐘更新，失敗等 5 分鐘，重新掃描可立即重試。詳見 [Gemini 來源](providers/gemini.md)。
 - **Antigravity 沒有資料**：確認在 Windows 上開啟並登入 CLI 或 Desktop，然後重新掃描。
   新版 CLI 需要 `agy` 在 `PATH` 或預設安裝位置，並能在終端機執行 `agy -p /usage --output-format json`。
   失敗後 5 分鐘才自動重試，重新掃描可立即重試。本機服務介面若隨版本改變，也可能暫時無法取得額度。
@@ -306,6 +312,9 @@ Cursor 手動模式需同時填入「已用」與「上限」；預設手動單�
   拒絕轉址，不刷新、改寫或另存登入 token；不讀 Desktop cookies 或 macOS Keychain。
   此為 Claude Code 使用的內部用量介面，沒有公開穩定 API 契約，可能隨服務變更而失效。
 - Codex 即時額度透過既有 CLI 的帳號介面查詢，可能由 CLI 連線官方服務。
+- Gemini 唯讀取得桌面版指定 Google 登入 cookie，明文只留在記憶體；取得用量頁驗證資訊後，
+  只向同站固定 batchexecute 端點查詢 `GetUsageInfo`。拒絕轉址，不刷新登入、不讀取對話。
+  此為內部介面，可能隨服務改版變動，帳號也需有可用的用量限制頁。
 - Cursor 專用讀取器會唯讀取得 IDE / CLI 的 access token，僅用於固定的
   `https://api2.cursor.sh` 用量端點，拒絕 HTTP 轉址，不修改登入資料或另存憑證。
 - Antigravity 整合先查詢本機 loopback 服務；必要時使用該程序命令列提供的 CSRF 驗證值。
@@ -331,7 +340,7 @@ internal/
   app/               指令處理、依賴組裝與生命週期
   model/             設定、事件、額度與快照
   service/           去重、累計增量、統計視窗與設定更新
-  source/            codex / claude / cursor / antigravity / logs
+  source/            codex / claude / cursor / antigravity / gemini / logs；wsl 為共用橋接
   record/            紀錄讀取與解析
   config/            設定檔儲存與遷移
   controller/        HTTP API 與 SSE

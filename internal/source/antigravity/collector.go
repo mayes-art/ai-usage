@@ -18,6 +18,7 @@ func New() *Collector { return &Collector{read: readAntigravityQuota} }
 
 func (c *Collector) Policy() model.ProviderPolicy {
 	return model.ProviderPolicy{
+		ShowWhenReported:  true,
 		QuotaOnly:         true,
 		UnavailableDetail: "請開啟並登入 Antigravity CLI 或 Desktop，然後重新掃描。",
 	}

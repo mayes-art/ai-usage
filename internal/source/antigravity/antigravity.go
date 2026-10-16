@@ -3,6 +3,7 @@ package antigravity
 import (
 	"aiusage/internal/model"
 	"aiusage/internal/record"
+	"aiusage/internal/source/wsl"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -181,6 +182,23 @@ func antigravityRequest(ctx context.Context, e antigravityEndpoint, method strin
 }
 
 func readAntigravityQuota() (*model.Reported, error) {
+	r, err := readAntigravityHost()
+	if err == nil {
+		return r, nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), agyWSLBudget)
+	defer cancel()
+	wr, wslErr := readAgyWSL(ctx, wsl.List, wsl.Exec)
+	if wr != nil {
+		return wr, nil
+	}
+	if wslErr != nil {
+		return nil, fmt.Errorf("主機：%v；%v", err, wslErr)
+	}
+	return nil, err
+}
+
+func readAntigravityHost() (*model.Reported, error) {
 	r, err := readAntigravityService()
 	if err == nil {
 		return r, nil

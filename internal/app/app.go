@@ -23,6 +23,7 @@ import (
 	"aiusage/internal/source/claude"
 	"aiusage/internal/source/codex"
 	"aiusage/internal/source/cursor"
+	"aiusage/internal/source/gemini"
 	"aiusage/internal/view"
 )
 
@@ -104,6 +105,7 @@ func newStore(cfg *model.Config) *service.Store {
 		model.ProviderClaude:      claude.New(),
 		model.ProviderCursor:      cursor.New(),
 		model.ProviderAntigravity: antigravity.New(),
+		model.ProviderGemini:      gemini.New(),
 	}
 	return service.New(cfg, config.FileRepository{}, collectors, desktop.InstalledProviders)
 }

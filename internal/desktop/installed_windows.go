@@ -32,6 +32,7 @@ func InstalledProviders() map[string]bool {
 	commands := map[string][]string{
 		model.ProviderClaude: {"claude.exe", "claude.cmd"}, model.ProviderCodex: {"codex.exe", "codex.cmd"},
 		model.ProviderCursor: {"cursor.exe", "cursor.cmd", "cursor-agent.exe"}, model.ProviderAntigravity: {"agy.exe", "antigravity.exe", "antigravity.cmd"},
+		model.ProviderGemini: {"gemini.exe", "gemini.cmd"},
 	}
 	for id, names := range commands {
 		for _, name := range names {
@@ -46,6 +47,7 @@ func InstalledProviders() map[string]bool {
 		model.ProviderCodex:       {filepath.Join(os.Getenv("APPDATA"), "npm", "codex.cmd")},
 		model.ProviderCursor:      {filepath.Join(local, "Programs", "cursor", "Cursor.exe"), filepath.Join(home, ".local", "bin", "cursor-agent.exe")},
 		model.ProviderAntigravity: {filepath.Join(local, "agy", "bin", "agy.exe"), filepath.Join(local, "Programs", "Antigravity", "Antigravity.exe")},
+		model.ProviderGemini:      {filepath.Join(local, "Google", "Gemini", "Gemini.exe")},
 	}
 	for id, candidates := range paths {
 		for _, path := range candidates {
@@ -56,7 +58,7 @@ func InstalledProviders() map[string]bool {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
-	script := `$ErrorActionPreference='Stop'; $names=@(Get-AppxPackage | Select-Object -ExpandProperty Name); foreach($key in @('HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*','HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*','HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*')) { $names+=@(Get-ItemProperty $key -ErrorAction SilentlyContinue | Select-Object -ExpandProperty DisplayName -ErrorAction SilentlyContinue) }; $names+=@(Get-Process -Name agy,Antigravity,Cursor,Claude,Codex -ErrorAction SilentlyContinue | Select-Object -ExpandProperty ProcessName); ConvertTo-Json -InputObject @($names) -Compress`
+	script := `$ErrorActionPreference='Stop'; $names=@(Get-AppxPackage | Select-Object -ExpandProperty Name); foreach($key in @('HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*','HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*','HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*')) { $names+=@(Get-ItemProperty $key -ErrorAction SilentlyContinue | Select-Object -ExpandProperty DisplayName -ErrorAction SilentlyContinue) }; $names+=@(Get-Process -Name agy,Antigravity,Cursor,Claude,Codex,Gemini -ErrorAction SilentlyContinue | Select-Object -ExpandProperty ProcessName); ConvertTo-Json -InputObject @($names) -Compress`
 	cmd := exec.CommandContext(ctx, filepath.Join(os.Getenv("SystemRoot"), "System32", "WindowsPowerShell", "v1.0", "powershell.exe"), "-NoProfile", "-NonInteractive", "-Command", script)
 	ConfigureBackgroundProcess(cmd)
 	data, err := cmd.Output()
@@ -68,7 +70,7 @@ func InstalledProviders() map[string]bool {
 	} else {
 		for _, name := range names {
 			name = strings.ToLower(name)
-			for id, word := range map[string]string{model.ProviderClaude: "claude", model.ProviderCodex: "codex", model.ProviderCursor: "cursor", model.ProviderAntigravity: "antigravity"} {
+			for id, word := range map[string]string{model.ProviderClaude: "claude", model.ProviderCodex: "codex", model.ProviderCursor: "cursor", model.ProviderAntigravity: "antigravity", model.ProviderGemini: "gemini"} {
 				if strings.Contains(name, word) {
 					found[id] = true
 				}

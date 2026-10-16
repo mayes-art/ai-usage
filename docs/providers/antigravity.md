@@ -15,6 +15,10 @@ GetUserStatus 的 cascadeModelConfigData.clientModelConfigs[].quotaInfo。新版
 remainingFraction 為剩餘比例，顯示已使用百分比為 (1-remainingFraction)*100。
 每個模型群的 5h / weekly 額度分開顯示，不將共享的模型額度相加。
 主數字選擇使用比例最高的限制，並以模型群與視窗標示；其餘限制列於下方。
+名稱含 Claude 的視窗另外在展開細節做成 Claude 模型進度條。
+主機本機服務與 `agy` 用量報告都失敗時，改查執行中 WSL 發行版裡的 Linux `agy`
+（`$HOME/.local/bin` 或 PATH，略過 `/mnt`）。沒有 Linux `agy` 時不報錯。
+Gemini 的 WSL 來源尚未做。
 CLI 和 Desktop 都開啟時採第一個成功回應的來源，來源會標示在畫面上，不合併帳號。
 
 agy 1.2.2 起本機服務要求 CSRF 驗證，token 不在命令列也不寫入磁碟，只傳給 agy 的子程序；
