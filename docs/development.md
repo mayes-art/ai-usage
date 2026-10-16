@@ -36,9 +36,15 @@ Linux 目前不做安裝過濾。舊設定中的 `gemini` 會在載入時移除�
 2. GitHub Actions 會建立或更新 `chore(main): release ...` PR，集中版本號與變更紀錄。
 3. 人工審查並合併 Release PR 後，Actions 先執行測試、靜態檢查及六平台建置。
 4. 全部成功後才建立 tag、上傳產物並公開 GitHub Release；暫時性失敗可直接重跑。
+5. 最後把該 Release PR 的 `autorelease: pending` 標籤換成 `autorelease: tagged`。
+
+release-please 只要看到已合併但仍是 `autorelease: pending` 的 Release PR，就不會建立下一張，
+而且 workflow 仍顯示成功。2026-10-16 前的 #3、#5 沒有這個步驟，需先手動把標籤改成
+`autorelease: tagged`，再手動執行 Release workflow。
 
 `feat:`、`fix:` 與 breaking change 會依 SemVer 決定下一版；目前在 `0.x` 階段，
-`feat:` 採 patch bump。內建版本號由 Release PR 同步更新，不需手動改 tag。
+`feat:` 採 patch bump，要升 minor 需在 commit 加 `Release-As: X.Y.Z`。
+內建版本號由 Release PR 同步更新，不需手動改 tag。
 GitHub repository 必須允許 Actions 建立 PR；若要強制不同人核准，請在 `main` 的
 branch ruleset 啟用「Require a pull request」與至少一位 approving review。
 若測試或建置因程式瑕疵持續失敗，需先以新 PR 修正，再由下一張 Release PR 發布；

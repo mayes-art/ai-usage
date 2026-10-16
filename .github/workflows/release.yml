@@ -109,3 +109,13 @@ jobs:
               --title "aiusage $RELEASE_TAG" \
               --notes-file "$RUNNER_TEMP/release-notes.md"
           fi
+
+      # release-please refuses to open the next release PR while a merged one is still pending.
+      - name: Mark release PR as tagged
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          gh label create "autorelease: tagged" --color ededed --force
+          gh pr edit "$PR_NUMBER" --remove-label "autorelease: pending" --add-label "autorelease: tagged"
