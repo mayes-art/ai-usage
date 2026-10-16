@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.3.0](https://github.com/mayes-art/ai-usage/compare/v0.3.0...v0.3.0) (2026-10-16)
+
+
+### Features
+
+* add reviewed release PR workflow ([5882c2a](https://github.com/mayes-art/ai-usage/commit/5882c2a511c0dababd887570dab89b483683524a))
+* AI 用量顯示工具 ([b45bb61](https://github.com/mayes-art/ai-usage/commit/b45bb61054e45b7fbfb66ab4fae19d218c261cad))
+* AI用量顯示 ([ef59fab](https://github.com/mayes-art/ai-usage/commit/ef59fab1bbf6bcee73de303afd70375e8bbcb8e1))
+* Claude 即時查詢帳號額度並支援 WSL 備援，修正新版 Antigravity CLI 無法顯示用量 ([6cd5853](https://github.com/mayes-art/ai-usage/commit/6cd5853d60ab0a2eb3fddda3c81e0e8de0401aa4))
+* **panel:** redesign as a vertical glass dashboard with window controls ([37d8751](https://github.com/mayes-art/ai-usage/commit/37d87517df6a5c9708fa9d25ad6ef2e4dbba0c26))
+* show separate Cursor model usage pools ([19b6a8e](https://github.com/mayes-art/ai-usage/commit/19b6a8ee80c87cbfc7bed1826741f78ef4345cef))
+* track account quota reset times separately from local windows ([cbb4a21](https://github.com/mayes-art/ai-usage/commit/cbb4a21bccab00e50aec4697101126db72d2078c))
+* 修改README.md ([e56a45e](https://github.com/mayes-art/ai-usage/commit/e56a45edf3cd259c50682616eba9962273e67754))
+* 加入 Gemini 桌面版額度與 Codex、Antigravity WSL 備援 ([00d1a41](https://github.com/mayes-art/ai-usage/commit/00d1a415266083066a5364d0b2e4de60ec8ab075))
+
+
+### Bug Fixes
+
+* make reviewed releases recoverable ([4c488b4](https://github.com/mayes-art/ai-usage/commit/4c488b4fed8a227ce0ed68be3a094650d68abbce))
+
 ## [0.3.0](https://github.com/mayes-art/ai-usage/compare/v0.2.0...v0.3.0) (2026-10-16)
 
 ### Features
