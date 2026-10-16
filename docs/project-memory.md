@@ -1,6 +1,6 @@
 # aiusage 專案記憶
 
-最後核對：2026-10-16；本次核對範圍為 Gemini 桌面版 cookie 解密、帳號額度查詢與舊設定排序遷移；另保留 Claude 帳號額度查詢與 Antigravity CLI 用量報告備援。
+最後核對：2026-10-16；本次核對範圍為 v0.3.0 正式發行、README 五來源預覽圖與下載連結，以及 Gemini 桌面版 cookie 解密、帳號額度查詢與舊設定排序遷移。
 現有功能包含 Cursor 雙模型池顯示、面板外觀改版（來源官方圖示、垂直堆疊的玻璃卡片、
 最上層與滑鼠移入才變不透明）與帳號額度重置倒數及到期立即重查，
 另已加入使用 Code 檔案式登入定期查詢 Claude 共享額度，保留 Desktop / statusLine 備援；
@@ -173,11 +173,12 @@ docker run --rm --mount "type=bind,source=$PWD,target=/src,readonly" -w /src gol
 docker run --rm --pull=always --mount "type=bind,source=$PWD,target=/src" -w /src golang:latest sh scripts/release.sh
 ```
 
-發行腳本先競態測試及 vet，再以 `CGO_ENABLED=0` 建置 Windows/Linux/macOS 的 amd64/arm64；Windows 額外產出 GUI 版，共八個執行檔。產物在 `dist/releases/`，含 `BUILDINFO.txt`、`SHA256SUMS`；`dist/` 被 Git 忽略。版本變數、manifest 與 CHANGELOG 已準備為 `0.3.0`，位於 `codex/release-v0.3.0` 分支，待 Release PR 合併才正式發行。
+發行腳本先競態測試及 vet，再以 `CGO_ENABLED=0` 建置 Windows/Linux/macOS 的 amd64/arm64；Windows 額外產出 GUI 版，共八個執行檔。產物在 `dist/releases/`，含 `BUILDINFO.txt`、`SHA256SUMS`；`dist/` 被 Git 忽略。
+版本變數、manifest 與 CHANGELOG 為 `0.3.0`。[v0.3.0](https://github.com/mayes-art/ai-usage/releases/tag/v0.3.0) 已於 2026-10-16 正式發布；Release PR #6 合併提交為 `461163b`，tag 指向同一提交。
 `bump-patch-for-minor-pre-major` 開啟時一般 `feat` 只升 patch，要升 minor 需在 commit 加 `Release-As:`。
 已合併的 Release PR 若仍是 `autorelease: pending`，release-please 不會開下一張 PR；`release.yml` 已在發行後自動改標籤。
-2026-10-16 核對遠端已沒有已合併且仍 pending 的 PR。Release PR 的說明會原文成為正式發行說明，
-合併帶 `autorelease: pending` 的 Release PR 會測試、建置並公開 Release。README 下載連結仍指向目前有效的 v0.2.0，v0.3.0 發行後再更新。
+Release PR 的說明會原文成為正式發行說明；合併帶 `autorelease: pending` 的 Release PR 會測試、建置並公開 Release。
+README 下載連結已同步 v0.3.0，`demo.png` 為使用者提供的五來源面板預覽。
 跨平台編譯不代表來源整合已實機驗證；沒有 macOS `.app`、簽章或公證流程。
 
 ## 已知事項與文件索引
