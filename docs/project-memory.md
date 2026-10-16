@@ -173,10 +173,11 @@ docker run --rm --mount "type=bind,source=$PWD,target=/src,readonly" -w /src gol
 docker run --rm --pull=always --mount "type=bind,source=$PWD,target=/src" -w /src golang:latest sh scripts/release.sh
 ```
 
-發行腳本先競態測試及 vet，再以 `CGO_ENABLED=0` 建置 Windows/Linux/macOS 的 amd64/arm64；Windows 額外產出 GUI 版，共八個執行檔。產物在 `dist/releases/`，含 `BUILDINFO.txt`、`SHA256SUMS`；`dist/` 被 Git 忽略。版本變數目前仍為 `0.2.0`；`6cd5853` 已帶 `Release-As: 0.3.0`，但 v0.3.0 尚未發行。
+發行腳本先競態測試及 vet，再以 `CGO_ENABLED=0` 建置 Windows/Linux/macOS 的 amd64/arm64；Windows 額外產出 GUI 版，共八個執行檔。產物在 `dist/releases/`，含 `BUILDINFO.txt`、`SHA256SUMS`；`dist/` 被 Git 忽略。版本變數、manifest 與 CHANGELOG 已準備為 `0.3.0`，位於 `codex/release-v0.3.0` 分支，待 Release PR 合併才正式發行。
 `bump-patch-for-minor-pre-major` 開啟時一般 `feat` 只升 patch，要升 minor 需在 commit 加 `Release-As:`。
-已合併的 Release PR 若仍是 `autorelease: pending`，release-please 不會開下一張 PR；#3、#5 需手動改標籤，
-`release.yml` 已在發行後自動改標籤。README 下載連結仍指向 v0.2.0，v0.3.0 發行後再更新。
+已合併的 Release PR 若仍是 `autorelease: pending`，release-please 不會開下一張 PR；`release.yml` 已在發行後自動改標籤。
+2026-10-16 核對遠端已沒有已合併且仍 pending 的 PR。Release PR 的說明會原文成為正式發行說明，
+合併帶 `autorelease: pending` 的 Release PR 會測試、建置並公開 Release。README 下載連結仍指向目前有效的 v0.2.0，v0.3.0 發行後再更新。
 跨平台編譯不代表來源整合已實機驗證；沒有 macOS `.app`、簽章或公證流程。
 
 ## 已知事項與文件索引

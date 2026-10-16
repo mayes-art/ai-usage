@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.3.0](https://github.com/mayes-art/ai-usage/compare/v0.2.0...v0.3.0) (2026-10-16)
+
+### Features
+
+* 新增 Gemini 桌面版帳號額度，顯示 5 小時與每週用量、重置時間及查詢狀態；卡片位於 Cursor 上方。
+* Codex 與 Antigravity 支援執行中 WSL 的 Linux CLI 備援，主機與 WSL 額度分開辨識、不相加。
+* Antigravity 展開細節新增 Claude 模型用量。
+* Claude 沿用 Code 檔案式登入定期查詢共享帳號額度，Windows 主機登入不可用時可改用 WSL 登入。
+
+### Bug Fixes
+
+* 修正 Gemini 新版 Chromium cookie 的主機雜湊解密，以及用量頁改採 GetUsageInfo 查詢的解析方式。
+* 修正升級後 Gemini 被附加到來源尾端的排序，保留既有設定與停用狀態。
+* 修正新版 Antigravity CLI 本機服務需要 CSRF 而無法取得用量，改用 CLI 內建用量報告備援。
+* Claude 主卡固定顯示 5 小時額度，避免過期視窗或週額度取代主值；到期過濾僅套用明確啟用的來源。
+
+### Documentation
+
+* 更新來源整合、WSL 使用條件、設定遷移與登入資料處理說明，補齊回歸測試及使用者驗收紀錄。
+
 ## [0.2.0](https://github.com/mayes-art/ai-usage/compare/v0.1.2...v0.2.0) (2026-09-15)
 
 
